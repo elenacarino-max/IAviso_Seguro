@@ -22,6 +22,7 @@ dist/
 # Datos locales y registros
 data/local/*
 !data/local/.gitkeep
+docs/
 *.db
 *.db-*
 *.sqlite

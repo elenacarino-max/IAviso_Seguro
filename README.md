@@ -4,13 +4,13 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Primera entrega: estructura y diseño del proyecto. La API, los proveedores y el dashboard todavía no están implementados. No procesa avisos reales.
+Implementados los contratos Pydantic de entrada y salida y sus pruebas unitarias. La API, los proveedores y el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
 Un trabajador describe una situación peligrosa. El sistema consulta una matriz de referencia, propone categoría, urgencia, resumen y departamento, y presenta la propuesta a un técnico para aprobarla, modificarla o rechazarla. La clasificación final requiere revisión humana.
 
-El alcance académico adapta un enunciado de servicios urbanos a riesgos laborales; queda pendiente confirmar esta adaptación con el profesorado.
+La adaptación del alcance académico de servicios urbanos a riesgos laborales está aprobada, según confirmación de la responsable del proyecto el 7 de septiembre de 2026.
 
 ## Arquitectura propuesta
 
@@ -50,13 +50,14 @@ python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
-Las dependencias son una propuesta inicial; falta verificar su instalación conjunta y fijar las versiones resueltas. No hay comandos de arranque ni pruebas ejecutables todavía. Se añadirán junto con la primera implementación funcional.
+Las dependencias son una propuesta inicial; falta verificar su instalación conjunta y fijar las versiones resueltas. Todavía no hay servidor ejecutable. Para comprobar los contratos desde la raíz:
 
-## Documentación
+```powershell
+python -m pytest -q
+```
 
-- [Valoración y alcance](docs/analisis.md)
-- [Arquitectura y contratos previstos](docs/arquitectura.md)
-- [Requisitos y entregas](docs/plan.md)
-- [Preparación del primer commit](docs/primer_commit.md)
+## Documentación de trabajo
+
+La carpeta `docs/` se conserva exclusivamente en local y está excluida del control de versiones. El README contiene la información pública necesaria para entender y ejecutar el proyecto; las decisiones internas, comparativas y notas de planificación permanecen en esa carpeta local.
 
 Solo se publicarán ejemplos sintéticos. Las credenciales, bases de datos y registros de ejecución quedan excluidos del repositorio. Es un prototipo académico de apoyo a la revisión; no sustituye la evaluación profesional ni el protocolo de emergencias del centro.
