@@ -1,5 +1,3 @@
-# unit
+# Pruebas unitarias
 
-Contratos, resumen de 10 palabras y fallos simulados del modelo.
-
-Todavía no contiene pruebas ejecutables.
+Desde la raíz: `python -m pytest -q`. Se comprueban contratos, límites, campos inesperados, resumen de 10 palabras y respuestas inválidas. No hay pruebas de endpoints todavía.

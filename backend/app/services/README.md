@@ -1,5 +1,5 @@
 # services
 
-Orquestación del triaje, corrección acotada y revisión humana.
+`TriageService` solicita datos candidatos al proveedor y los valida con `TriageResult` antes de devolverlos a la API.
 
-Pendiente de implementación.
+La corrección acotada, los errores de proveedor y la revisión humana se implementarán en sus fases correspondientes.

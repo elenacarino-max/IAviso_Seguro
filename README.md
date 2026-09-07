@@ -4,7 +4,7 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Implementados los contratos Pydantic de entrada y salida y sus pruebas unitarias. La API, los proveedores y el dashboard todavía no están implementados. No procesa avisos reales.
+Fase 1 completada: contratos Pydantic, API FastAPI mínima, proveedor simulado y pruebas automáticas. Los proveedores reales, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -50,10 +50,23 @@ python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
-Las dependencias son una propuesta inicial; falta verificar su instalación conjunta y fijar las versiones resueltas. Todavía no hay servidor ejecutable. Para comprobar los contratos desde la raíz:
+Las dependencias actuales se han instalado y probado conjuntamente en el entorno local; todavía falta fijar sus versiones resueltas para una entrega reproducible. Para ejecutar todas las pruebas desde la raíz:
 
 ```powershell
 python -m pytest -q
+```
+
+Arrancar la API desde la raíz:
+
+```powershell
+python -m uvicorn backend.app.main:app --reload
+```
+
+Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 ```
 
 ## Documentación de trabajo
