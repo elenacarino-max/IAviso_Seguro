@@ -1,0 +1,5 @@
+[
+  {"id": "demo-001", "text": "Hay aceite derramado junto a la máquina de corte.", "location": "Taller de demostración"},
+  {"id": "demo-002", "text": "La puerta de emergencia está bloqueada con cajas.", "location": "Almacén de demostración"},
+  {"id": "demo-003", "text": "Un cable eléctrico está pelado en la zona de carga.", "location": "Zona de demostración"}
+]

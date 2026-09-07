@@ -1,0 +1,39 @@
+# Entornos y credenciales
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+*.pem
+*.key
+
+# Python y herramientas
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Datos locales y registros
+data/local/*
+!data/local/.gitkeep
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+logs/
+
+# Archivos temporales y configuración personal
+.*/*
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+~$*
+tmp/
