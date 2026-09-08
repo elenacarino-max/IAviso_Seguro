@@ -1,7 +1,9 @@
 # providers
 
-`TriageProvider` define el contrato mínimo intercambiable. `MockTriageProvider` completa el flujo de la Fase 1 con una respuesta sintética determinista.
+`TriageProvider` acepta salidas JSON o diccionarios y recibe un `RepairContext` cuando el servicio rechaza una respuesta. El contexto contiene la salida inválida y tipos de error Pydantic para que un adaptador futuro pueda pedir una corrección.
 
-El mock no clasifica riesgos ni llama a un LLM. Su salida siempre se valida mediante `TriageResult`.
+`ProviderConnectionError` y `ProviderRateLimitError` representan fallos esperados sin exponer detalles internos. La Fase 2 no reintenta conexiones ni límites de uso.
+
+`MockTriageProvider` continúa devolviendo una respuesta sintética determinista. No clasifica riesgos ni llama a un LLM; toda salida se valida mediante `TriageResult`.
 
 Ollama y el proveedor externo pertenecen a fases posteriores.

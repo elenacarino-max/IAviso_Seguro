@@ -1,5 +1,7 @@
 # services
 
-`TriageService` solicita datos candidatos al proveedor y los valida con `TriageResult` antes de devolverlos a la API.
+`TriageService` procesa JSON o diccionarios, valida cada salida con `TriageResult` y solicita una reparación cuando el contrato falla. El límite configurable cuenta reparaciones adicionales: con el valor predeterminado 1 hay como máximo dos llamadas.
 
-La corrección acotada, los errores de proveedor y la revisión humana se implementarán en sus fases correspondientes.
+Cada intento registra solo metadatos técnicos. Si todos fallan, se lanza `InvalidProviderOutputError`; conexión y rate limit se propagan como errores conocidos para que la API los traduzca.
+
+La revisión humana se implementará en su fase correspondiente.

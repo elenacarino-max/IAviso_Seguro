@@ -1,14 +1,18 @@
 """Proveedor determinista para completar el flujo HTTP sin usar un LLM."""
 
-from collections.abc import Mapping
-
 from backend.app.schemas import TriageRequest
+from .base import ProviderOutput, RepairContext
 
 
 class MockTriageProvider:
     """Devuelve una propuesta sintética y explícitamente no profesional."""
 
-    def generate(self, request: TriageRequest) -> Mapping[str, object]:
+    def generate(
+        self,
+        request: TriageRequest,
+        *,
+        repair: RepairContext | None = None,
+    ) -> ProviderOutput:
         location = request.location or "ubicación no indicada"
         return {
             "category": "otros",

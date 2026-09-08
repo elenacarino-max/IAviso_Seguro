@@ -1,5 +1,5 @@
 # integration
 
-La Fase 1 prueba `GET /health`, las dos selecciones válidas de proveedor y el rechazo HTTP 422 de entradas inválidas.
+Se prueban `GET /health`, `POST /api/v1/triage`, validación 422, `request_id`, errores controlados 429/502/503, `Retry-After`, OpenAPI y continuidad del servidor tras un fallo.
 
 Las pruebas utilizan el proveedor simulado y no realizan conexiones externas.

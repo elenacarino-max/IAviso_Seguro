@@ -4,7 +4,7 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 1 completada: contratos Pydantic, API FastAPI mínima, proveedor simulado y pruebas automáticas. Los proveedores reales, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
+Fase 2 completada: la API valida y repara de forma acotada las salidas del proveedor, devuelve errores controlados, asigna un `request_id` y genera logs JSON sin contenido sensible. Los proveedores reales, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -68,6 +68,18 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 ```
+
+Cada respuesta incluye `X-Request-ID`. Los fallos previstos mantienen un cuerpo estable:
+
+```json
+{
+  "error": {"code": "invalid_provider_output", "message": "El proveedor devolvió una respuesta inválida."},
+  "request_id": "uuid-generado-por-el-servidor"
+}
+```
+
+El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS` entre 0 y 3. Los reintentos de conexión y el backoff pertenecen a la futura integración del proveedor externo.
+
 
 ## Documentación de trabajo
 
