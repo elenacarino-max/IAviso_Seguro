@@ -4,7 +4,7 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 2 completada: la API valida y repara de forma acotada las salidas del proveedor, devuelve errores controlados, asigna un `request_id` y genera logs JSON sin contenido sensible. Los proveedores reales, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
+Fase 3 completada: antes de emitir una propuesta, el proveedor debe consultar una matriz didáctica versionada mediante una herramienta con argumentos validados y un único paso permitido. La API conserva la validación y reparación acotada, los errores controlados, el `request_id` y los logs JSON trazables sin el texto del aviso. Los proveedores reales, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -69,7 +69,11 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 ```
 
-Cada respuesta incluye `X-Request-ID`. Los fallos previstos mantienen un cuerpo estable:
+La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
+
+El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
+
+Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor, herramienta o matriz mantienen un cuerpo estable:
 
 ```json
 {

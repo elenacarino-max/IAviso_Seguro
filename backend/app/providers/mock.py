@@ -1,7 +1,8 @@
 """Proveedor determinista para completar el flujo HTTP sin usar un LLM."""
 
-from backend.app.schemas import TriageRequest
-from .base import ProviderOutput, RepairContext
+from backend.app.schemas import RiskMatrixObservation, TriageRequest
+
+from .base import ProviderStep, RepairContext, ToolCall
 
 
 class MockTriageProvider:
@@ -11,16 +12,24 @@ class MockTriageProvider:
         self,
         request: TriageRequest,
         *,
+        observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
-    ) -> ProviderOutput:
+    ) -> ProviderStep:
+        if observation is None:
+            return ToolCall(
+                name="consultar_matriz_riesgos",
+                arguments={"category": "otros"},
+            )
+
         location = request.location or "ubicación no indicada"
         return {
-            "category": "otros",
-            "urgency": "media",
+            "category": observation.arguments.category,
+            "urgency": observation.recommended_urgency,
             "summary": "Aviso recibido correctamente y preparado para revisión humana del técnico.",
-            "department": "prevencion",
+            "department": observation.department,
             "justification": (
-                "Respuesta simulada de la Fase 1 para "
-                f"{location}; todavía no procede de un modelo real."
+                f"Matriz didáctica {observation.matrix_version}, regla "
+                f"{observation.rule_id}, para {location}: {observation.evidence} "
+                "La propuesta requiere revisión profesional."
             ),
         }

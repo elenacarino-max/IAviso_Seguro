@@ -1,9 +1,9 @@
 # providers
 
-`TriageProvider` acepta salidas JSON o diccionarios y recibe un `RepairContext` cuando el servicio rechaza una respuesta. El contexto contiene la salida inválida y tipos de error Pydantic para que un adaptador futuro pueda pedir una corrección.
+`TriageProvider` puede solicitar una `ToolCall` o devolver una salida JSON/diccionario. Tras la consulta, recibe una `RiskMatrixObservation`; si el servicio rechaza la respuesta final, también recibe un `RepairContext` acotado.
 
 `ProviderConnectionError` y `ProviderRateLimitError` representan fallos esperados sin exponer detalles internos. La Fase 2 no reintenta conexiones ni límites de uso.
 
-`MockTriageProvider` continúa devolviendo una respuesta sintética determinista. No clasifica riesgos ni llama a un LLM; toda salida se valida mediante `TriageResult`.
+`MockTriageProvider` ejecuta de forma determinista el ciclo herramienta-respuesta para probar la integración. No clasifica texto ni llama a un LLM; toda salida se valida mediante `TriageResult`.
 
 Ollama y el proveedor externo pertenecen a fases posteriores.

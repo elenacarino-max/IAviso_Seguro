@@ -4,9 +4,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from backend.app.schemas import TriageRequest
+from backend.app.schemas import RiskMatrixObservation, TriageRequest
 
 ProviderOutput = str | bytes | Mapping[str, object]
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    """Solicitud estructurada; el servicio decide si puede ejecutarse."""
+
+    name: str
+    arguments: Mapping[str, object]
+
+
+ProviderStep = ProviderOutput | ToolCall
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +35,8 @@ class TriageProvider(Protocol):
         self,
         request: TriageRequest,
         *,
+        observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
-    ) -> ProviderOutput:
-        """Genera una salida inicial o corrige una salida previamente rechazada."""
+    ) -> ProviderStep:
+        """Solicita una herramienta o genera una salida candidata."""
         ...

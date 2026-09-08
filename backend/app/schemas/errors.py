@@ -8,6 +8,10 @@ ErrorCode = Literal[
     "invalid_provider_output",
     "provider_unavailable",
     "provider_rate_limited",
+    "invalid_tool_arguments",
+    "invalid_risk_matrix",
+    "required_tool_not_executed",
+    "tool_step_limit_exceeded",
 ]
 
 

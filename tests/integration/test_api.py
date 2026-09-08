@@ -1,4 +1,4 @@
-"""Pruebas del recorrido HTTP mínimo de la Fase 1."""
+"""Pruebas del recorrido HTTP de triaje con herramienta real."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,16 +27,15 @@ def test_triage_returns_valid_mock_proposal(provider):
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "category": "otros",
-        "urgency": "media",
-        "summary": "Aviso recibido correctamente y preparado para revisión humana del técnico.",
-        "department": "prevencion",
-        "justification": (
-            "Respuesta simulada de la Fase 1 para Almacén de demostración; "
-            "todavía no procede de un modelo real."
-        ),
-    }
+    result = response.json()
+    assert result["category"] == "otros"
+    assert result["urgency"] == "media"
+    assert result["department"] == "prevencion"
+    assert result["summary"] == (
+        "Aviso recibido correctamente y preparado para revisión humana del técnico."
+    )
+    assert "Matriz didáctica 1.0.0, regla RM-OTRO-001" in result["justification"]
+    assert "revisión profesional" in result["justification"]
 
 
 @pytest.mark.parametrize(

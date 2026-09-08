@@ -4,7 +4,17 @@ import json
 import logging
 from datetime import UTC, datetime
 
-_STRUCTURED_FIELDS = ("request_id", "attempt", "outcome", "error_type")
+_STRUCTURED_FIELDS = (
+    "request_id",
+    "attempt",
+    "step",
+    "outcome",
+    "error_type",
+    "tool_name",
+    "tool_arguments",
+    "matrix_version",
+    "tool_result",
+)
 
 
 class JsonFormatter(logging.Formatter):

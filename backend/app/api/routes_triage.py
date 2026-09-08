@@ -1,4 +1,4 @@
-"""Endpoint de triaje de la Fase 1."""
+"""Endpoint de triaje asistido con validación y herramienta acotada."""
 
 from typing import Annotated
 
@@ -29,6 +29,7 @@ def get_triage_service() -> TriageService:
     response_model=TriageResult,
     responses={
         429: {"model": ErrorResponse, "description": "Límite temporal del proveedor"},
+        500: {"model": ErrorResponse, "description": "Matriz inválida o no disponible"},
         502: {"model": ErrorResponse, "description": "Salida del proveedor inválida"},
         503: {"model": ErrorResponse, "description": "Proveedor no disponible"},
     },

@@ -1,4 +1,4 @@
-"""Pruebas HTTP de request_id y errores estables de proveedor."""
+"""Pruebas HTTP de request_id y errores estables de proveedor y herramienta."""
 
 from uuid import UUID
 
@@ -9,6 +9,12 @@ from backend.app.api.routes_triage import get_triage_service
 from backend.app.main import app
 from backend.app.providers import ProviderConnectionError, ProviderRateLimitError
 from backend.app.services import InvalidProviderOutputError
+from backend.app.tools import (
+    InvalidRiskMatrixError,
+    InvalidToolArgumentsError,
+    RequiredToolCallError,
+    ToolStepLimitError,
+)
 
 client = TestClient(app)
 VALID_PAYLOAD = {"text": "Hay un cable deteriorado.", "provider": "local"}
@@ -51,6 +57,10 @@ def test_success_response_has_generated_request_id():
         (InvalidProviderOutputError(2), 502, "invalid_provider_output"),
         (ProviderConnectionError("timeout"), 503, "provider_unavailable"),
         (ProviderRateLimitError(), 429, "provider_rate_limited"),
+        (InvalidToolArgumentsError("argumentos"), 502, "invalid_tool_arguments"),
+        (InvalidRiskMatrixError("matriz"), 500, "invalid_risk_matrix"),
+        (RequiredToolCallError("sin herramienta"), 502, "required_tool_not_executed"),
+        (ToolStepLimitError("límite"), 502, "tool_step_limit_exceeded"),
     ],
 )
 def test_expected_failures_have_stable_responses(error, status_code, code):
@@ -76,7 +86,7 @@ def test_server_continues_serving_after_provider_failure():
     assert healthy.headers["X-Request-ID"] != failed.headers["X-Request-ID"]
 
 
-def test_openapi_documents_controlled_provider_errors():
+def test_openapi_documents_controlled_errors():
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/triage"]["post"]
     responses = operation["responses"]
-    assert {"429", "502", "503"} <= set(responses)
+    assert {"429", "500", "502", "503"} <= set(responses)

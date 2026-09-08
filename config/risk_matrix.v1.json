@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "disclaimer": "Matriz didáctica para un prototipo académico; no es normativa ni sustituye una evaluación profesional o el protocolo de emergencias.",
+  "rules": [
+    {
+      "rule_id": "RM-ELEC-001",
+      "category": "riesgo_electrico",
+      "conditions": ["conductores o cables dañados", "chispas, humo o contacto eléctrico expuesto"],
+      "recommended_urgency": "alta",
+      "department": "mantenimiento",
+      "evidence": "La exposición eléctrica requiere aislar la zona y valoración técnica prioritaria."
+    },
+    {
+      "rule_id": "RM-CAID-001",
+      "category": "caidas_obstaculos",
+      "conditions": ["derrames en zonas de paso", "obstáculos o desniveles sin señalizar"],
+      "recommended_urgency": "media",
+      "department": "limpieza",
+      "evidence": "Los derrames y obstáculos elevan el riesgo de caída y requieren señalización y retirada."
+    },
+    {
+      "rule_id": "RM-INCE-001",
+      "category": "incendio",
+      "conditions": ["humo, llama o sobrecalentamiento", "salidas o equipos de emergencia bloqueados"],
+      "recommended_urgency": "critica",
+      "department": "seguridad",
+      "evidence": "Los indicios de incendio o evacuación comprometida exigen aplicar el protocolo de emergencia."
+    },
+    {
+      "rule_id": "RM-MAQU-001",
+      "category": "maquinaria",
+      "conditions": ["resguardos ausentes o dañados", "movimiento, ruido o funcionamiento anómalo"],
+      "recommended_urgency": "alta",
+      "department": "mantenimiento",
+      "evidence": "Una protección defectuosa o un funcionamiento anómalo requiere detener y revisar el equipo."
+    },
+    {
+      "rule_id": "RM-SUST-001",
+      "category": "sustancias_peligrosas",
+      "conditions": ["derrame, fuga, vapor u olor inusual", "recipiente sin identificar o almacenamiento incompatible"],
+      "recommended_urgency": "alta",
+      "department": "seguridad",
+      "evidence": "Una posible exposición química requiere identificar el producto y aplicar su procedimiento específico."
+    },
+    {
+      "rule_id": "RM-ESTR-001",
+      "category": "problemas_estructurales",
+      "conditions": ["grietas, deformaciones o desprendimientos", "elementos de soporte visiblemente dañados"],
+      "recommended_urgency": "alta",
+      "department": "mantenimiento",
+      "evidence": "El daño estructural visible necesita delimitación de la zona y evaluación competente."
+    },
+    {
+      "rule_id": "RM-EPI-001",
+      "category": "falta_epi",
+      "conditions": ["equipo de protección ausente", "equipo deteriorado o inadecuado para la tarea"],
+      "recommended_urgency": "media",
+      "department": "prevencion",
+      "evidence": "La tarea debe revisarse cuando el equipo de protección requerido no está disponible o es inadecuado."
+    },
+    {
+      "rule_id": "RM-ERGO-001",
+      "category": "ergonomia",
+      "conditions": ["postura forzada o movimiento repetitivo", "manipulación manual de cargas o puesto mal ajustado"],
+      "recommended_urgency": "baja",
+      "department": "prevencion",
+      "evidence": "Los factores ergonómicos requieren revisar la tarea y adaptar el puesto con criterio preventivo."
+    },
+    {
+      "rule_id": "RM-OTRO-001",
+      "category": "otros",
+      "conditions": ["información insuficiente", "situación no cubierta por las categorías anteriores"],
+      "recommended_urgency": "media",
+      "department": "prevencion",
+      "evidence": "La situación necesita revisión humana para confirmar categoría, prioridad y departamento responsable."
+    }
+  ]
+}

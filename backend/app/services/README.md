@@ -1,7 +1,9 @@
 # services
 
-`TriageService` procesa JSON o diccionarios, valida cada salida con `TriageResult` y solicita una reparación cuando el contrato falla. El límite configurable cuenta reparaciones adicionales: con el valor predeterminado 1 hay como máximo dos llamadas.
+`TriageService` orquesta un ciclo acotado: exige una consulta previa a `consultar_matriz_riesgos`, entrega la observación al proveedor y valida la salida final con `TriageResult`.
 
-Cada intento registra solo metadatos técnicos. Si todos fallan, se lanza `InvalidProviderOutputError`; conexión y rate limit se propagan como errores conocidos para que la API los traduzca.
+Solo se permite una llamada de herramienta. Se rechazan herramientas desconocidas, argumentos fuera de contrato, matrices inválidas, una segunda consulta y resultados cuya categoría contradiga la observación. Las salidas inválidas admiten las mismas reparaciones configurables de la Fase 2.
+
+Cada intento y ejecución registra solo metadatos técnicos trazables. Los errores esperados se propagan para que la API los traduzca sin exponer detalles internos.
 
 La revisión humana se implementará en su fase correspondiente.
