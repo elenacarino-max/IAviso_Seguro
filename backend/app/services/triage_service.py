@@ -185,6 +185,9 @@ class TriageService:
     @staticmethod
     def _summarize_errors(error: ValidationError) -> tuple[str, ...]:
         return tuple(
-            f"{'.'.join(str(part) for part in item['loc'])}:{item['type']}"
+            (
+                f"{'.'.join(str(part) for part in item['loc'])}:"
+                f"{item['type']}:{item['msg']}"
+            )
             for item in error.errors(include_url=False, include_context=False, include_input=False)
         )

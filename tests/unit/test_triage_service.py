@@ -89,6 +89,21 @@ def test_repairs_invalid_enum_then_accepts_valid_mapping(triage_request):
     assert any("urgency" in error for error in provider.repairs[2].validation_errors)
 
 
+def test_repair_feedback_explains_ten_word_constraint(triage_request):
+    invalid_result = {**VALID_RESULT, "summary": "Resumen demasiado breve."}
+    provider = SequenceProvider(TOOL_CALL, invalid_result, VALID_RESULT)
+
+    TriageService(provider, max_repair_attempts=1).triage(
+        triage_request,
+        request_id="req-summary",
+    )
+
+    assert any(
+        "exactamente 10 palabras" in error
+        for error in provider.repairs[2].validation_errors
+    )
+
+
 def test_exhaustion_raises_stable_service_error(triage_request):
     provider = SequenceProvider(TOOL_CALL, "{", "[]")
 

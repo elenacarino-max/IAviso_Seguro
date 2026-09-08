@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 
 from backend.app.core.settings import get_settings
-from backend.app.providers import MockTriageProvider
+from backend.app.providers import OllamaTriageProvider, ProviderRouter
 from backend.app.schemas import ErrorResponse, TriageRequest, TriageResult
 from backend.app.services import TriageService
 
@@ -13,7 +13,17 @@ router = APIRouter(prefix="/api/v1", tags=["triage"])
 
 _settings = get_settings()
 _triage_service = TriageService(
-    MockTriageProvider(),
+    ProviderRouter(
+        {
+            "local": OllamaTriageProvider(
+                base_url=str(_settings.ollama_base_url),
+                model=_settings.local_model,
+                timeout_seconds=_settings.llm_timeout_seconds,
+                temperature=_settings.ollama_temperature,
+                top_p=_settings.ollama_top_p,
+            )
+        }
+    ),
     max_repair_attempts=_settings.llm_repair_attempts,
 )
 

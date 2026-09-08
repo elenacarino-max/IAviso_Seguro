@@ -7,8 +7,12 @@ from fastapi.testclient import TestClient
 
 from backend.app.api.routes_triage import get_triage_service
 from backend.app.main import app
-from backend.app.providers import ProviderConnectionError, ProviderRateLimitError
-from backend.app.services import InvalidProviderOutputError
+from backend.app.providers import (
+    MockTriageProvider,
+    ProviderConnectionError,
+    ProviderRateLimitError,
+)
+from backend.app.services import InvalidProviderOutputError, TriageService
 from backend.app.tools import (
     InvalidRiskMatrixError,
     InvalidToolArgumentsError,
@@ -45,10 +49,29 @@ def assert_stable_error(response, *, status_code, code):
 
 
 def test_success_response_has_generated_request_id():
-    response = client.post("/api/v1/triage", json=VALID_PAYLOAD)
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(
+        MockTriageProvider()
+    )
+    try:
+        response = client.post("/api/v1/triage", json=VALID_PAYLOAD)
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 200
     UUID(response.headers["X-Request-ID"])
+
+
+def test_external_provider_is_explicitly_unavailable_until_phase_five():
+    response = client.post(
+        "/api/v1/triage",
+        json={"text": "Aviso sintético.", "provider": "external"},
+    )
+
+    assert_stable_error(
+        response,
+        status_code=503,
+        code="provider_unavailable",
+    )
 
 
 @pytest.mark.parametrize(
