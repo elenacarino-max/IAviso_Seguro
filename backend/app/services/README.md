@@ -6,4 +6,6 @@ Solo se permite una llamada de herramienta. Se rechazan herramientas desconocida
 
 Cada intento y ejecución registra solo metadatos técnicos trazables. Los errores esperados se propagan para que la API los traduzca sin exponer detalles internos.
 
-La revisión humana se implementará en su fase correspondiente.
+Tras un triaje válido, la API delega la creación de la propuesta y las
+transiciones humanas al repositorio transaccional. La propuesta original nunca
+se reemplaza por la clasificación revisada.

@@ -4,6 +4,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from backend.app.providers import ProviderConnectionError, ProviderRateLimitError
+from backend.app.repositories import (
+    NoticeNotFoundError,
+    PersistenceError,
+    ReviewConflictError,
+)
 from backend.app.schemas import ErrorDetail, ErrorResponse
 from backend.app.services import InvalidProviderOutputError
 from backend.app.tools import (
@@ -36,6 +41,42 @@ def _error_response(
 
 def register_exception_handlers(application: FastAPI) -> None:
     """Registra solo fallos previstos; los detalles internos no salen por HTTP."""
+
+    @application.exception_handler(NoticeNotFoundError)
+    async def notice_not_found_handler(
+        request: Request,
+        exc: NoticeNotFoundError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=404,
+            code="notice_not_found",
+            message="El aviso solicitado no existe.",
+        )
+
+    @application.exception_handler(ReviewConflictError)
+    async def review_conflict_handler(
+        request: Request,
+        exc: ReviewConflictError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=409,
+            code="review_conflict",
+            message="La propuesta ya cambió o fue revisada.",
+        )
+
+    @application.exception_handler(PersistenceError)
+    async def persistence_error_handler(
+        request: Request,
+        exc: PersistenceError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=500,
+            code="persistence_error",
+            message="No se pudo completar la operación de persistencia.",
+        )
 
     @application.exception_handler(InvalidProviderOutputError)
     async def invalid_output_handler(

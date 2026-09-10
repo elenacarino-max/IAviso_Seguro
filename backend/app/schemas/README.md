@@ -12,4 +12,11 @@ El catálogo inicial tiene nueve categorías, cuatro urgencias y cuatro departam
 
 `risk_matrix.py` añade contratos estrictos e inmutables para el documento versionado, cada regla, la consulta y la observación devuelta por la herramienta. La matriz debe cubrir las nueve categorías exactamente una vez, usar identificadores únicos y declarar que no es normativa.
 
-Estos contratos validan la estructura, no la corrección profesional de una propuesta. Las decisiones humanas se implementarán después.
+`workflow.py` define la propuesta persistida, avisos, ejecuciones, revisiones y
+auditoría. `ReviewRequest` exige revisor, comentario y versión esperada; solo
+`modified` admite cambios en categoría, urgencia o departamento y debe contener
+al menos uno.
+
+Estos contratos validan la estructura, no la corrección profesional de una
+propuesta. Una revisión humana tampoco representa la resolución operativa del
+riesgo.

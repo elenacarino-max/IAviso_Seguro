@@ -1,5 +1,6 @@
 """Endpoint de triaje asistido con validación y herramienta acotada."""
 
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -10,7 +11,8 @@ from backend.app.providers import (
     OllamaTriageProvider,
     ProviderRouter,
 )
-from backend.app.schemas import ErrorResponse, TriageRequest, TriageResult
+from backend.app.repositories import SQLiteNoticeRepository
+from backend.app.schemas import ErrorResponse, TriageProposalResponse, TriageRequest
 from backend.app.services import TriageService
 
 router = APIRouter(prefix="/api/v1", tags=["triage"])
@@ -49,9 +51,22 @@ def get_triage_service() -> TriageService:
     return _triage_service
 
 
+@lru_cache
+def get_notice_repository() -> SQLiteNoticeRepository:
+    """Dependencia sustituible para usar bases temporales en pruebas."""
+
+    return SQLiteNoticeRepository(_settings.database_path)
+
+
+def _provider_model(provider: str) -> str | None:
+    if provider == "local":
+        return _settings.local_model or None
+    return _settings.external_model or None
+
+
 @router.post(
     "/triage",
-    response_model=TriageResult,
+    response_model=TriageProposalResponse,
     responses={
         429: {"model": ErrorResponse, "description": "Límite temporal del proveedor"},
         500: {"model": ErrorResponse, "description": "Matriz inválida o no disponible"},
@@ -63,5 +78,16 @@ def create_triage(
     payload: TriageRequest,
     request: Request,
     service: Annotated[TriageService, Depends(get_triage_service)],
-) -> TriageResult:
-    return service.triage(payload, request_id=request.state.request_id)
+    repository: Annotated[
+        SQLiteNoticeRepository,
+        Depends(get_notice_repository),
+    ],
+) -> TriageProposalResponse:
+    request_id = request.state.request_id
+    result = service.triage(payload, request_id=request_id)
+    return repository.create_triage(
+        payload,
+        result,
+        request_id=request_id,
+        model=_provider_model(payload.provider),
+    )

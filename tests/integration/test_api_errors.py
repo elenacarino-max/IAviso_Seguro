@@ -5,13 +5,14 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.api.routes_triage import get_triage_service
+from backend.app.api.routes_triage import get_notice_repository, get_triage_service
 from backend.app.main import app
 from backend.app.providers import (
     MockTriageProvider,
     ProviderConnectionError,
     ProviderRateLimitError,
 )
+from backend.app.repositories import PersistenceError, SQLiteNoticeRepository
 from backend.app.services import InvalidProviderOutputError, TriageService
 from backend.app.tools import (
     InvalidRiskMatrixError,
@@ -32,12 +33,27 @@ class FailingService:
         raise self.error
 
 
+class FailingRepository:
+    def list_notices(self):
+        raise PersistenceError("detalle interno")
+
+
+@pytest.fixture(autouse=True)
+def isolated_repository(tmp_path):
+    repository = SQLiteNoticeRepository(tmp_path / "api-errors.db")
+    app.dependency_overrides[get_notice_repository] = lambda: repository
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+
+
 def post_with_service(service):
     app.dependency_overrides[get_triage_service] = lambda: service
     try:
         return client.post("/api/v1/triage", json=VALID_PAYLOAD)
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_triage_service, None)
 
 
 def assert_stable_error(response, *, status_code, code):
@@ -55,7 +71,7 @@ def test_success_response_has_generated_request_id():
     try:
         response = client.post("/api/v1/triage", json=VALID_PAYLOAD)
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_triage_service, None)
 
     assert response.status_code == 200
     UUID(response.headers["X-Request-ID"])
@@ -113,3 +129,23 @@ def test_openapi_documents_controlled_errors():
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/triage"]["post"]
     responses = operation["responses"]
     assert {"429", "500", "502", "503"} <= set(responses)
+
+
+def test_persistence_failure_has_stable_response():
+    app.dependency_overrides[get_notice_repository] = lambda: FailingRepository()
+
+    response = client.get("/api/v1/notices")
+
+    assert_stable_error(
+        response,
+        status_code=500,
+        code="persistence_error",
+    )
+
+
+def test_openapi_documents_notice_and_review_endpoints():
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/api/v1/notices" in paths
+    review = paths["/api/v1/notices/{notice_id}/reviews"]["post"]
+    assert {"404", "409", "500"} <= set(review["responses"])

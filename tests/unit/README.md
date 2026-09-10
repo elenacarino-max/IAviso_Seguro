@@ -6,3 +6,5 @@ errores de proveedor y herramienta, cobertura completa de la matriz,
 configuración, logging sin contenido sensible y los adaptadores Ollama/Gemini con
 transportes simulados. Las pruebas externas incluyen continuidad de llamadas de
 función, tokens desconocidos, timeout, `429`, retry y backoff.
+También se validan los contratos de revisión y las transacciones SQLite con
+aprobación, modificación, rechazo, auditoría y competencia entre revisores.

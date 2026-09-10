@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 
 from backend.app.api.routes_health import router as health_router
+from backend.app.api.routes_notices import router as notices_router
 from backend.app.api.routes_triage import router as triage_router
 from backend.app.core.http_errors import register_exception_handlers
 from backend.app.core.logging import configure_logging
@@ -16,7 +17,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="IAviso Seguro",
         description="API académica de triaje asistido de riesgos laborales.",
-        version="0.5.0",
+        version="0.6.0",
     )
 
     @application.middleware("http")
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(application)
     application.include_router(health_router)
     application.include_router(triage_router)
+    application.include_router(notices_router)
     return application
 
 

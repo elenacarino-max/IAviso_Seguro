@@ -1,6 +1,7 @@
 """Configuración validada de la aplicación."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Self
 
 from pydantic import AnyHttpUrl, Field, SecretStr, model_validator
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    database_path: Path = Path("data/local/iaviso.db")
     llm_repair_attempts: int = Field(default=1, ge=0, le=3)
     llm_max_retries: int = Field(default=2, ge=0, le=5)
     llm_retry_base_seconds: float = Field(default=0.5, ge=0, le=60)

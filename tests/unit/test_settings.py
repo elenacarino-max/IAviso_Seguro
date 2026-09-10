@@ -1,9 +1,19 @@
 """Pruebas del límite configurable de reparación."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from backend.app.core.settings import Settings
+
+
+def test_database_path_is_configurable(monkeypatch):
+    monkeypatch.setenv("DATABASE_PATH", "data/local/prueba.db")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.database_path == Path("data/local/prueba.db")
 
 
 @pytest.mark.parametrize("attempts", [0, 1, 3])

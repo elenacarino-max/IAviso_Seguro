@@ -4,13 +4,13 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 5 completada localmente: `local` usa Ollama mediante `/api/chat` y
-`external` usa Gemini mediante `generateContent`. Ambos ejecutan una llamada de
-herramienta y validan la salida con el mismo contrato Pydantic. Gemini conserva
-el contexto opaco requerido por sus modelos, aplica retry y backoff acotados
-solo a fallos transitorios y registra latencia y tokens informados sin incluir
-credenciales ni el texto del aviso. La persistencia y el dashboard todavía no
-están implementados. No procesa avisos reales.
+Fase 6 completada localmente: `local` usa Ollama y `external` usa Gemini con el
+mismo contrato, herramienta y validación. Cada resultado se guarda en SQLite
+como propuesta `pending_review`; la API permite consultarla y aprobarla,
+modificarla o rechazarla mediante una revisión humana versionada. La propuesta
+original, la clasificación final, el comentario, el revisor, la fecha UTC y los
+eventos de auditoría se conservan por separado. La resolución operativa del
+riesgo y el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -81,10 +81,23 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
+$proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/notices
+$review = @{decision='approved'; reviewer='Tecnica demo'; comment='Caso sintetico revisado.'; expected_version=$proposal.version} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/reviews" -ContentType 'application/json' -Body $review
 # Requiere EXTERNAL_API_KEY en .env:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","provider":"external"}'
 ```
+
+Persistencia:
+
+- `DATABASE_PATH`: archivo SQLite local; por defecto `data/local/iaviso.db`.
+- Toda propuesta nueva empieza en `pending_review` con versión `0`.
+- La revisión exige `expected_version`; una revisión duplicada o concurrente
+  devuelve `409` y no sobrescribe la decisión ganadora.
+- `approved` confirma la clasificación, `modified` exige al menos un cambio en
+  categoría, urgencia o departamento y `rejected` no crea una clasificación
+  final aceptada.
 
 Variables del proveedor local:
 
@@ -110,7 +123,8 @@ La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada un
 
 El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. Los prompts separan sistema, ejemplos sintéticos, aviso, contexto de herramienta y formato. Indican que se ignoren atributos demográficos irrelevantes. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
 
-Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor, herramienta o matriz mantienen un cuerpo estable:
+Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor,
+herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 
 ```json
 {
