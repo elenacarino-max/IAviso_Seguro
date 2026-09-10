@@ -4,13 +4,13 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 6 completada localmente: `local` usa Ollama y `external` usa Gemini con el
-mismo contrato, herramienta y validación. Cada resultado se guarda en SQLite
-como propuesta `pending_review`; la API permite consultarla y aprobarla,
-modificarla o rechazarla mediante una revisión humana versionada. La propuesta
-original, la clasificación final, el comentario, el revisor, la fecha UTC y los
-eventos de auditoría se conservan por separado. La resolución operativa del
-riesgo y el dashboard todavía no están implementados. No procesa avisos reales.
+Fase 7 completada localmente: `local` usa Ollama y `external` usa Gemini con el
+mismo contrato, herramienta y validación. Cada triaje conserva métricas de
+proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
+La API permite comparar ambos proveedores con una misma entrada sin crear dos
+avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
+mantienen una revisión humana versionada. La resolución operativa del riesgo y
+el dashboard todavía no están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -33,14 +33,14 @@ backend/app/
   api/           Rutas y respuestas HTTP
   core/          Configuración y observabilidad
   schemas/       Contratos de entrada y salida
-  services/      Triaje, reintentos y revisión humana
+  services/      Triaje, telemetría y evaluación reproducible
   providers/     Adaptadores local y externo
   tools/         Consulta de la matriz de riesgos
   prompts/       Instrucciones y ejemplos versionados
   repositories/  Persistencia de avisos y decisiones
 frontend/        Dashboard
 config/          Configuración de dominio y matriz de referencia
-data/           Ejemplos sintéticos y almacenamiento local
+data/           Ejemplos, evaluación sintética y almacenamiento local
 tests/          Pruebas unitarias, integración y respuestas simuladas
 docs/           Análisis, arquitectura y plan de trabajo
 ```
@@ -85,6 +85,7 @@ $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/tri
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/notices
 $review = @{decision='approved'; reviewer='Tecnica demo'; comment='Caso sintetico revisado.'; expected_version=$proposal.version} | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/reviews" -ContentType 'application/json' -Body $review
+$comparison = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/comparisons -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","location":"Zona demo"}'
 # Requiere EXTERNAL_API_KEY en .env:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","provider":"external"}'
 ```
@@ -115,6 +116,8 @@ Variables del proveedor externo:
 - `LLM_MAX_RETRIES`: reintentos de transporte, `429` y HTTP transitorios.
 - `LLM_RETRY_BASE_SECONDS` y `LLM_RETRY_MAX_SECONDS`: backoff exponencial y
   límite máximo de espera.
+- `EXTERNAL_PRICE_MODEL`, tarifas por millón de tokens, moneda, fuente y fecha:
+  referencia versionada para calcular el coste solo cuando coincide el modelo.
 
 Si falta la clave externa, la API responde `503` sin intentar una conexión. Un
 aviso nunca se redirige implícitamente a otro proveedor.
@@ -136,6 +139,14 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
 entre 0 y 3. Los reintentos externos son independientes de esas reparaciones:
 solo cubren fallos transitorios y quedan limitados por la configuración anterior.
+
+Las métricas nunca convierten un dato ausente en cero. El coste de API local es
+`0`, mientras que su coste computacional queda como `null` porque depende del
+equipo y no se mide. El coste externo queda como `null` si faltan tokens o la
+tarifa no corresponde exactamente al modelo usado. El conjunto
+`data/evaluation/avisos.v1.json` está separado de los ejemplos few-shot y cubre
+las nueve categorías, ambigüedad, información insuficiente y variantes
+demográficas. Sus resultados son académicos, no una referencia profesional.
 
 ### Prueba manual local verificada
 

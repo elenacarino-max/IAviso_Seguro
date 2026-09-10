@@ -10,6 +10,8 @@ Rutas HTTP:
   revisiones.
 - `POST /api/v1/notices/{notice_id}/reviews`: aprueba, modifica o rechaza la
   propuesta pendiente usando control de versión optimista.
+- `POST /api/v1/comparisons`: ejecuta la misma entrada en ambos proveedores,
+  devuelve resultados o errores individuales y no crea avisos duplicados.
 
 La ruta delega en el servicio y no contiene lógica del proveedor ni de la herramienta. OpenAPI documenta `429` para rate limit, `500` para matriz inválida, `502` para salidas o llamadas de herramienta rechazadas y `503` para proveedor no disponible.
 

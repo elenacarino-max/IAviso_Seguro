@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from time import perf_counter
 from urllib.parse import quote
@@ -14,7 +15,7 @@ import httpx
 from backend.app.prompts import build_gemini_request
 from backend.app.schemas import RiskMatrixObservation, TriageRequest
 
-from .base import ProviderStep, RepairContext, ToolCall
+from .base import ProviderCallMetrics, ProviderStep, RepairContext, ToolCall
 from .errors import ProviderConnectionError, ProviderRateLimitError
 
 _TRANSIENT_HTTP_STATUS = frozenset({408, 500, 502, 503, 504})
@@ -81,13 +82,24 @@ class GeminiTriageProvider:
         self._retry_max_seconds = retry_max_seconds
         self._sleep = sleep
         self._clock = clock
-        self._last_usage = ProviderUsage(None, None, None)
+        self._last_usage: ContextVar[ProviderUsage] = ContextVar(
+            f"gemini_usage_{id(self)}",
+            default=ProviderUsage(None, None, None),
+        )
+        self._last_call: ContextVar[ProviderCallMetrics | None] = ContextVar(
+            f"gemini_call_metrics_{id(self)}",
+            default=None,
+        )
 
     @property
     def last_usage(self) -> ProviderUsage:
         """Expone solo métricas reales de la última respuesta aceptada por HTTP."""
 
-        return self._last_usage
+        return self._last_usage.get()
+
+    @property
+    def last_call_metrics(self) -> ProviderCallMetrics | None:
+        return self._last_call.get()
 
     def generate(
         self,
@@ -97,7 +109,8 @@ class GeminiTriageProvider:
         repair: RepairContext | None = None,
         tool_call: ToolCall | None = None,
     ) -> ProviderStep:
-        self._last_usage = ProviderUsage(None, None, None)
+        self._last_usage.set(ProviderUsage(None, None, None))
+        self._last_call.set(None)
         if not self._api_key:
             raise ProviderConnectionError("No hay una clave externa configurada.")
         if not self._model:
@@ -134,6 +147,7 @@ class GeminiTriageProvider:
         body: Mapping[str, object],
     ) -> Mapping[str, object]:
         path = f"models/{quote(self._model, safe='')}:generateContent"
+        call_started_at = self._clock()
         for retry_count in range(self._max_retries + 1):
             started_at = self._clock()
             try:
@@ -149,6 +163,12 @@ class GeminiTriageProvider:
                     started_at=started_at,
                 )
                 if retry_count == self._max_retries:
+                    self._record_call(
+                        call_started_at,
+                        provider_attempts=retry_count + 1,
+                        success=False,
+                        error_type="transport_error",
+                    )
                     raise ProviderConnectionError(
                         "No se pudo conectar con Gemini."
                     ) from exc
@@ -165,6 +185,13 @@ class GeminiTriageProvider:
                     retry_after_seconds=retry_after,
                 )
                 if retry_count == self._max_retries:
+                    self._record_call(
+                        call_started_at,
+                        provider_attempts=retry_count + 1,
+                        success=False,
+                        error_type="rate_limited",
+                        status_code=response.status_code,
+                    )
                     raise ProviderRateLimitError(retry_after)
                 self._sleep(self._retry_delay(retry_count, retry_after))
                 continue
@@ -177,6 +204,13 @@ class GeminiTriageProvider:
                     status_code=response.status_code,
                 )
                 if retry_count == self._max_retries:
+                    self._record_call(
+                        call_started_at,
+                        provider_attempts=retry_count + 1,
+                        success=False,
+                        error_type="transient_http_error",
+                        status_code=response.status_code,
+                    )
                     raise ProviderConnectionError(
                         "Gemini agotó los reintentos transitorios."
                     )
@@ -190,6 +224,13 @@ class GeminiTriageProvider:
                     started_at=started_at,
                     status_code=response.status_code,
                 )
+                self._record_call(
+                    call_started_at,
+                    provider_attempts=retry_count + 1,
+                    success=False,
+                    error_type="non_transient_http_error",
+                    status_code=response.status_code,
+                )
                 raise ProviderConnectionError("Gemini rechazó la petición.")
 
             try:
@@ -201,25 +242,71 @@ class GeminiTriageProvider:
                     started_at=started_at,
                     status_code=response.status_code,
                 )
+                self._record_call(
+                    call_started_at,
+                    provider_attempts=retry_count + 1,
+                    success=False,
+                    error_type="invalid_response",
+                    status_code=response.status_code,
+                )
                 raise ProviderConnectionError(
                     "Gemini devolvió una respuesta ilegible."
                 ) from exc
             if not isinstance(payload, Mapping):
+                self._record_call(
+                    call_started_at,
+                    provider_attempts=retry_count + 1,
+                    success=False,
+                    error_type="incomplete_response",
+                    status_code=response.status_code,
+                )
                 raise ProviderConnectionError(
                     "Gemini devolvió una respuesta incompleta."
                 )
 
-            self._last_usage = self._parse_usage(payload.get("usageMetadata"))
+            usage = self._parse_usage(payload.get("usageMetadata"))
+            self._last_usage.set(usage)
             self._log_attempt(
                 retry_count=retry_count,
                 outcome="accepted",
                 started_at=started_at,
                 status_code=response.status_code,
-                usage=self._last_usage,
+                usage=usage,
+            )
+            self._record_call(
+                call_started_at,
+                provider_attempts=retry_count + 1,
+                success=True,
+                status_code=response.status_code,
+                usage=usage,
             )
             return payload
 
         raise ProviderConnectionError("Gemini no devolvió una respuesta.")
+
+    def _record_call(
+        self,
+        started_at: float,
+        *,
+        provider_attempts: int,
+        success: bool,
+        error_type: str | None = None,
+        status_code: int | None = None,
+        usage: ProviderUsage | None = None,
+    ) -> None:
+        usage = usage or ProviderUsage(None, None, None)
+        self._last_call.set(
+            ProviderCallMetrics(
+                provider_attempts=provider_attempts,
+                latency_ms=round((self._clock() - started_at) * 1000, 3),
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                total_tokens=usage.total_tokens,
+                success=success,
+                error_type=error_type,
+                status_code=status_code,
+            )
+        )
 
     def _retry_delay(
         self,

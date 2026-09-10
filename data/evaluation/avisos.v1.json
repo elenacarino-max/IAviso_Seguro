@@ -1,0 +1,114 @@
+{
+  "version": "1.0.0",
+  "disclaimer": "Resultados académicos sobre datos sintéticos; no son una referencia profesional ni sustituyen una evaluación preventiva.",
+  "cases": [
+    {
+      "id": "elec-001",
+      "text": "Cable con cobre visible y chispas junto al cuadro eléctrico.",
+      "location": "Taller sintético",
+      "expected_category": "riesgo_electrico",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "caida-001",
+      "text": "Hay aceite derramado sin señalizar en una zona de paso.",
+      "location": "Pasillo sintético",
+      "expected_category": "caidas_obstaculos",
+      "expected_urgency": "media",
+      "expected_department": "limpieza",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "incendio-001",
+      "text": "Sale humo de un armario y la salida de emergencia está bloqueada.",
+      "location": "Planta sintética",
+      "expected_category": "incendio",
+      "expected_urgency": "critica",
+      "expected_department": "seguridad",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "maquinaria-001",
+      "text": "La prensa funciona con el resguardo retirado y hace ruido anómalo.",
+      "location": "Taller sintético",
+      "expected_category": "maquinaria",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "sustancias-001",
+      "text": "Un bidón sin etiqueta pierde líquido y desprende olor fuerte.",
+      "location": "Almacén sintético",
+      "expected_category": "sustancias_peligrosas",
+      "expected_urgency": "alta",
+      "expected_department": "seguridad",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "estructura-001",
+      "text": "Se observan grietas nuevas y desprendimientos en un soporte.",
+      "location": "Nave sintética",
+      "expected_category": "problemas_estructurales",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "epi-001",
+      "text": "La persona realiza el corte sin las gafas de protección requeridas.",
+      "location": "Taller sintético",
+      "expected_category": "falta_epi",
+      "expected_urgency": "media",
+      "expected_department": "prevencion",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "ergo-001",
+      "text": "El puesto obliga a mantener postura forzada durante toda la tarea.",
+      "location": "Oficina sintética",
+      "expected_category": "ergonomia",
+      "expected_urgency": "baja",
+      "expected_department": "prevencion",
+      "tags": ["canonical"]
+    },
+    {
+      "id": "otro-001",
+      "text": "Se comunica una situación insegura sin indicar qué ocurre.",
+      "location": null,
+      "expected_category": "otros",
+      "expected_urgency": "media",
+      "expected_department": "prevencion",
+      "tags": ["canonical", "insufficient_information"]
+    },
+    {
+      "id": "ambiguo-001",
+      "text": "Hay un objeto extraño cerca de una máquina, sin más detalles.",
+      "location": "Zona sintética",
+      "expected_category": "otros",
+      "expected_urgency": "media",
+      "expected_department": "prevencion",
+      "tags": ["ambiguous", "insufficient_information"]
+    },
+    {
+      "id": "neutral-001",
+      "text": "Una persona operaria no dispone del casco exigido para la tarea.",
+      "location": "Obra sintética",
+      "expected_category": "falta_epi",
+      "expected_urgency": "media",
+      "expected_department": "prevencion",
+      "tags": ["demographic_neutral"]
+    },
+    {
+      "id": "neutral-002",
+      "text": "Una trabajadora no dispone del casco exigido para la tarea.",
+      "location": "Obra sintética",
+      "expected_category": "falta_epi",
+      "expected_urgency": "media",
+      "expected_department": "prevencion",
+      "tags": ["demographic_variant"]
+    }
+  ]
+}

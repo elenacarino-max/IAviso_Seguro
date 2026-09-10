@@ -12,6 +12,10 @@ from uuid import UUID, uuid4
 from backend.app.schemas import (
     AuditEventRecord,
     ClassificationDecision,
+    ComparisonProviderResult,
+    ComparisonRequest,
+    ComparisonResponse,
+    ExecutionMetrics,
     NoticeRecord,
     ReviewRecord,
     ReviewRequest,
@@ -43,6 +47,25 @@ CREATE TABLE IF NOT EXISTS triage_runs (
     ),
     version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
     proposal_json TEXT NOT NULL,
+    metrics_json TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS comparisons (
+    id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    location TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS comparison_runs (
+    id TEXT PRIMARY KEY,
+    comparison_id TEXT NOT NULL REFERENCES comparisons(id) ON DELETE RESTRICT,
+    provider TEXT NOT NULL CHECK (provider IN ('local', 'external')),
+    model TEXT,
+    result_json TEXT,
+    metrics_json TEXT NOT NULL,
+    error_code TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -83,6 +106,8 @@ CREATE INDEX IF NOT EXISTS idx_triage_runs_notice
     ON triage_runs(notice_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_audit_events_notice
     ON audit_events(notice_id, id);
+CREATE INDEX IF NOT EXISTS idx_comparison_runs_comparison
+    ON comparison_runs(comparison_id, created_at);
 """
 
 
@@ -116,6 +141,14 @@ class SQLiteNoticeRepository:
         try:
             with self._connect() as connection:
                 connection.executescript(_SCHEMA)
+                columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(triage_runs)")
+                }
+                if "metrics_json" not in columns:
+                    connection.execute(
+                        "ALTER TABLE triage_runs ADD COLUMN metrics_json TEXT"
+                    )
         except sqlite3.Error as exc:
             raise PersistenceError("No se pudo inicializar la base de datos.") from exc
 
@@ -126,6 +159,7 @@ class SQLiteNoticeRepository:
         *,
         request_id: str,
         model: str | None,
+        metrics: ExecutionMetrics,
     ) -> TriageProposalResponse:
         notice_id = uuid4()
         triage_run_id = uuid4()
@@ -150,8 +184,8 @@ class SQLiteNoticeRepository:
                 """
                 INSERT INTO triage_runs (
                     id, notice_id, request_id, provider, model, status,
-                    version, proposal_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?)
+                    version, proposal_json, metrics_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?, ?)
                 """,
                 (
                     str(triage_run_id),
@@ -160,6 +194,7 @@ class SQLiteNoticeRepository:
                     request.provider,
                     model or None,
                     proposal_json,
+                    metrics.model_dump_json(),
                     created_at.isoformat(),
                 ),
             )
@@ -188,7 +223,66 @@ class SQLiteNoticeRepository:
             provider=request.provider,
             model=model or None,
             created_at=created_at,
+            metrics=metrics,
         )
+
+    def create_comparison(
+        self,
+        request: ComparisonRequest,
+        results: tuple[ComparisonProviderResult, ...],
+    ) -> ComparisonResponse:
+        comparison_id = uuid4()
+        created_at = self._utc_now()
+        response = ComparisonResponse(
+            comparison_id=comparison_id,
+            created_at=created_at,
+            results=results,
+        )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                INSERT INTO comparisons (id, text, location, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    str(comparison_id),
+                    request.text,
+                    request.location,
+                    created_at.isoformat(),
+                ),
+            )
+            for item in results:
+                connection.execute(
+                    """
+                    INSERT INTO comparison_runs (
+                        id, comparison_id, provider, model, result_json,
+                        metrics_json, error_code, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        str(comparison_id),
+                        item.provider,
+                        item.metrics.model,
+                        (
+                            item.result.model_dump_json()
+                            if item.result is not None
+                            else None
+                        ),
+                        item.metrics.model_dump_json(),
+                        item.error_code,
+                        item.metrics.completed_at.isoformat(),
+                    ),
+                )
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise PersistenceError("No se pudo guardar la comparación.") from exc
+        finally:
+            connection.close()
+        return response
 
     def list_notices(self) -> tuple[NoticeRecord, ...]:
         try:
@@ -207,6 +301,7 @@ class SQLiteNoticeRepository:
                         tr.status,
                         tr.version,
                         tr.proposal_json,
+                        tr.metrics_json,
                         tr.created_at AS run_created_at,
                         r.id AS review_id,
                         r.decision,
@@ -270,7 +365,7 @@ class SQLiteNoticeRepository:
             row = connection.execute(
                 """
                 SELECT id, request_id, provider, model, status, version,
-                       proposal_json, created_at
+                       proposal_json, metrics_json, created_at
                 FROM triage_runs
                 WHERE notice_id = ?
                 ORDER BY created_at DESC, rowid DESC
@@ -382,6 +477,11 @@ class SQLiteNoticeRepository:
                 version=new_version,
                 proposal=proposal,
                 created_at=datetime.fromisoformat(row["created_at"]),
+                metrics=(
+                    ExecutionMetrics.model_validate_json(row["metrics_json"])
+                    if row["metrics_json"] is not None
+                    else None
+                ),
                 review=record,
             ),
         )
@@ -456,6 +556,11 @@ class SQLiteNoticeRepository:
             version=row["version"],
             proposal=TriageResult.model_validate_json(row["proposal_json"]),
             created_at=datetime.fromisoformat(row["run_created_at"]),
+            metrics=(
+                ExecutionMetrics.model_validate_json(row["metrics_json"])
+                if row["metrics_json"] is not None
+                else None
+            ),
             review=review,
         )
 

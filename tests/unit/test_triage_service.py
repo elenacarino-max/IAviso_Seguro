@@ -78,6 +78,36 @@ def test_repairs_broken_json_then_accepts_valid_output(triage_request):
     assert provider.repairs[2].validation_errors
 
 
+def test_execute_counts_provider_and_repair_attempts(triage_request):
+    provider = SequenceProvider(TOOL_CALL, "{", json.dumps(VALID_RESULT))
+
+    execution = TriageService(
+        provider,
+        max_repair_attempts=1,
+    ).execute(triage_request, request_id="req-metrics")
+
+    assert execution.result is not None
+    assert execution.error is None
+    assert execution.telemetry.provider_attempts == 3
+    assert execution.telemetry.repair_attempts == 1
+    assert execution.telemetry.json_valid is True
+    assert execution.telemetry.input_tokens is None
+
+
+def test_execute_marks_exhausted_contract_as_invalid(triage_request):
+    provider = SequenceProvider(TOOL_CALL, "{", "[]")
+
+    execution = TriageService(provider).execute(
+        triage_request,
+        request_id="req-invalid-metrics",
+    )
+
+    assert isinstance(execution.error, InvalidProviderOutputError)
+    assert execution.telemetry.provider_attempts == 3
+    assert execution.telemetry.repair_attempts == 1
+    assert execution.telemetry.json_valid is False
+
+
 def test_repairs_invalid_enum_then_accepts_valid_mapping(triage_request):
     invalid_result = {**VALID_RESULT, "urgency": "urgente"}
     provider = SequenceProvider(TOOL_CALL, invalid_result, VALID_RESULT)

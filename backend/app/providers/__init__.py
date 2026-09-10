@@ -1,6 +1,13 @@
 """Proveedores intercambiables utilizados por el servicio de triaje."""
 
-from .base import ProviderOutput, ProviderStep, RepairContext, ToolCall, TriageProvider
+from .base import (
+    ProviderCallMetrics,
+    ProviderOutput,
+    ProviderStep,
+    RepairContext,
+    ToolCall,
+    TriageProvider,
+)
 from .errors import ProviderConnectionError, ProviderError, ProviderRateLimitError
 from .gemini import GeminiTriageProvider, ProviderUsage
 from .mock import MockTriageProvider
@@ -12,6 +19,7 @@ __all__ = [
     "MockTriageProvider",
     "OllamaTriageProvider",
     "ProviderConnectionError",
+    "ProviderCallMetrics",
     "ProviderError",
     "ProviderOutput",
     "ProviderStep",

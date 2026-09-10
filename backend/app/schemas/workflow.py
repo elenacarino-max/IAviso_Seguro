@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .catalogs import Category, Department, Provider, Urgency
+from .metrics import ExecutionMetrics
 from .triage import TriageResult
 
 ProposalStatus = Literal["pending_review", "approved", "modified", "rejected"]
@@ -66,6 +67,7 @@ class TriageProposalResponse(TriageResult):
     provider: Provider
     model: str | None
     created_at: datetime
+    metrics: ExecutionMetrics
 
 
 class ReviewRecord(WorkflowContract):
@@ -86,6 +88,7 @@ class TriageRunRecord(WorkflowContract):
     version: int = Field(strict=True, ge=0)
     proposal: TriageResult
     created_at: datetime
+    metrics: ExecutionMetrics | None
     review: ReviewRecord | None
 
 

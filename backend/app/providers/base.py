@@ -8,6 +8,21 @@ from backend.app.schemas import RiskMatrixObservation, TriageRequest
 
 ProviderOutput = str | bytes | Mapping[str, object]
 
+
+@dataclass(frozen=True, slots=True)
+class ProviderCallMetrics:
+    """Métricas agregadas de una llamada lógica, incluidos sus retries."""
+
+    provider_attempts: int
+    latency_ms: float
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    success: bool
+    error_type: str | None = None
+    status_code: int | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ToolCall:
     """Solicitud estructurada; el servicio decide si puede ejecutarse."""
@@ -20,7 +35,6 @@ class ToolCall:
 
 
 ProviderStep = ProviderOutput | ToolCall
-
 
 
 @dataclass(frozen=True, slots=True)

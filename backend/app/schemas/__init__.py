@@ -1,7 +1,19 @@
 """Contratos públicos de triaje."""
 
-from .errors import ErrorDetail, ErrorResponse
+from .errors import ErrorCode, ErrorDetail, ErrorResponse
 from .health import HealthResponse
+from .metrics import (
+    ComparisonProviderResult,
+    ComparisonRequest,
+    ComparisonResponse,
+    EvaluationCase,
+    EvaluationDataset,
+    EvaluationObservation,
+    EvaluationReport,
+    ExecutionMetrics,
+    PricingReference,
+    ProviderEvaluationSummary,
+)
 from .risk_matrix import (
     RiskMatrixDocument,
     RiskMatrixObservation,
@@ -25,11 +37,22 @@ from .workflow import (
 __all__ = [
     "AuditEventRecord",
     "ClassificationDecision",
+    "ComparisonProviderResult",
+    "ComparisonRequest",
+    "ComparisonResponse",
     "ErrorDetail",
+    "ErrorCode",
     "ErrorResponse",
+    "EvaluationCase",
+    "EvaluationDataset",
+    "EvaluationObservation",
+    "EvaluationReport",
+    "ExecutionMetrics",
     "HealthResponse",
     "NoticeRecord",
     "ProposalStatus",
+    "PricingReference",
+    "ProviderEvaluationSummary",
     "ReviewDecision",
     "ReviewRecord",
     "ReviewRequest",

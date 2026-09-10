@@ -17,6 +17,10 @@ auditoría. `ReviewRequest` exige revisor, comentario y versión esperada; solo
 `modified` admite cambios en categoría, urgencia o departamento y debe contener
 al menos uno.
 
+`metrics.py` define telemetría, referencia de precios, comparación y evaluación.
+Los campos no observados son nulos de forma explícita; el coste API y el coste
+computacional son conceptos separados.
+
 Estos contratos validan la estructura, no la corrección profesional de una
 propuesta. Una revisión humana tampoco representa la resolución operativa del
 riesgo.

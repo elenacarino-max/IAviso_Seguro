@@ -1,11 +1,15 @@
 """Orquestación segura y reparación acotada de las salidas de triaje."""
 
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime
+from time import perf_counter
 
 from pydantic import ValidationError
 
 from backend.app.providers import (
     ProviderConnectionError,
+    ProviderCallMetrics,
     ProviderOutput,
     ProviderRateLimitError,
     RepairContext,
@@ -22,6 +26,7 @@ from backend.app.tools import (
 )
 
 from .errors import InvalidProviderOutputError
+from .execution import ExecutionAccumulator, TriageExecution
 
 _MAX_REPAIR_ATTEMPTS = 3
 _MAX_TOOL_STEPS = 1
@@ -37,6 +42,8 @@ class TriageService:
         *,
         max_repair_attempts: int = 1,
         risk_matrix_tool: RiskMatrixTool | None = None,
+        clock: Callable[[], float] = perf_counter,
+        utc_clock: Callable[[], datetime] | None = None,
     ) -> None:
         if (
             isinstance(max_repair_attempts, bool)
@@ -49,8 +56,66 @@ class TriageService:
             risk_matrix_tool if risk_matrix_tool is not None else RiskMatrixTool()
         )
         self._max_repair_attempts = max_repair_attempts
+        self._clock = clock
+        self._utc_clock = utc_clock or (lambda: datetime.now(UTC))
 
     def triage(self, request: TriageRequest, *, request_id: str) -> TriageResult:
+        execution = self.execute(request, request_id=request_id)
+        if execution.error is not None:
+            raise execution.error
+        if execution.result is None:
+            raise RuntimeError("La ejecución terminó sin resultado ni error.")
+        return execution.result
+
+    def execute(self, request: TriageRequest, *, request_id: str) -> TriageExecution:
+        accumulator = ExecutionAccumulator(
+            started_at=self._utc_now(),
+            started_tick=self._clock(),
+        )
+        try:
+            result = self._triage(
+                request,
+                request_id=request_id,
+                accumulator=accumulator,
+            )
+        except (
+            InvalidProviderOutputError,
+            ProviderConnectionError,
+            ProviderRateLimitError,
+            ToolError,
+        ) as exc:
+            return TriageExecution(
+                result=None,
+                telemetry=accumulator.finish(
+                    completed_at=self._utc_now(),
+                    completed_tick=self._clock(),
+                    success=False,
+                    error_type=type(exc).__name__,
+                    json_valid=(
+                        False
+                        if isinstance(exc, InvalidProviderOutputError)
+                        else None
+                    ),
+                ),
+                error=exc,
+            )
+        return TriageExecution(
+            result=result,
+            telemetry=accumulator.finish(
+                completed_at=self._utc_now(),
+                completed_tick=self._clock(),
+                success=True,
+                error_type=None,
+            ),
+        )
+
+    def _triage(
+        self,
+        request: TriageRequest,
+        *,
+        request_id: str,
+        accumulator: ExecutionAccumulator,
+    ) -> TriageResult:
         observation: RiskMatrixObservation | None = None
         repair: RepairContext | None = None
         tool_call: ToolCall | None = None
@@ -58,6 +123,7 @@ class TriageService:
         max_provider_steps = self._max_repair_attempts + _MAX_TOOL_STEPS + 1
 
         for step in range(1, max_provider_steps + 1):
+            provider_started = self._clock()
             try:
                 candidate = self._provider.generate(
                     request,
@@ -66,6 +132,12 @@ class TriageService:
                     tool_call=tool_call,
                 )
             except (ProviderConnectionError, ProviderRateLimitError) as exc:
+                self._capture_provider_call(
+                    accumulator,
+                    started_at=provider_started,
+                    success=False,
+                    error_type=type(exc).__name__,
+                )
                 _logger.warning(
                     "triage_attempt",
                     extra={
@@ -76,6 +148,12 @@ class TriageService:
                     },
                 )
                 raise
+            self._capture_provider_call(
+                accumulator,
+                started_at=provider_started,
+                success=True,
+                error_type=None,
+            )
 
             if isinstance(candidate, ToolCall):
                 if observation is not None:
@@ -142,6 +220,7 @@ class TriageService:
                 if repairs_used == self._max_repair_attempts:
                     raise InvalidProviderOutputError(attempts=output_attempt) from exc
                 repairs_used += 1
+                accumulator.repair_attempts = repairs_used
                 repair = RepairContext(
                     invalid_output=candidate,
                     validation_errors=self._summarize_errors(exc),
@@ -161,6 +240,7 @@ class TriageService:
                 if repairs_used == self._max_repair_attempts:
                     raise InvalidProviderOutputError(attempts=output_attempt)
                 repairs_used += 1
+                accumulator.repair_attempts = repairs_used
                 repair = RepairContext(
                     invalid_output=candidate,
                     validation_errors=("category:tool_evidence_mismatch",),
@@ -178,6 +258,33 @@ class TriageService:
             return result
 
         raise ToolStepLimitError("Se agotó el límite total de pasos del triaje.")
+
+    def _capture_provider_call(
+        self,
+        accumulator: ExecutionAccumulator,
+        *,
+        started_at: float,
+        success: bool,
+        error_type: str | None,
+    ) -> None:
+        metrics = getattr(self._provider, "last_call_metrics", None)
+        if not isinstance(metrics, ProviderCallMetrics):
+            metrics = ProviderCallMetrics(
+                provider_attempts=1,
+                latency_ms=round((self._clock() - started_at) * 1000, 3),
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                success=success,
+                error_type=error_type,
+            )
+        accumulator.add_call(metrics)
+
+    def _utc_now(self) -> datetime:
+        value = self._utc_clock()
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("El reloj UTC debe devolver una fecha con zona.")
+        return value.astimezone(UTC)
 
     @staticmethod
     def _parse(candidate: ProviderOutput) -> TriageResult:

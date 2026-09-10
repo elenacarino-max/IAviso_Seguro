@@ -50,6 +50,9 @@ def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider
     assert result["provider"] == provider
     assert result["notice_id"]
     assert result["triage_run_id"]
+    assert result["metrics"]["provider"] == provider
+    assert result["metrics"]["provider_attempts"] == 2
+    assert result["metrics"]["computational_cost"] is None
     assert result["category"] == "otros"
     assert result["urgency"] == "media"
     assert result["department"] == "prevencion"
@@ -73,6 +76,31 @@ def test_triage_rejects_invalid_input(payload):
     response = client.post("/api/v1/triage", json=payload)
 
     assert response.status_code == 422
+
+
+def test_comparison_uses_same_input_without_creating_notices(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+
+    response = client.post(
+        "/api/v1/comparisons",
+        json={
+            "text": "Hay agua derramada en el pasillo.",
+            "location": "Almacén de demostración",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["provider"] for item in body["results"]] == [
+        "local",
+        "external",
+    ]
+    assert all(item["result"] is not None for item in body["results"])
+    assert body["results"][0]["metrics"]["api_cost"] == "0"
+    assert body["results"][1]["metrics"]["api_cost"] is None
+    assert repository.list_notices() == ()
 
 
 def test_notice_can_be_listed_and_modified_once():

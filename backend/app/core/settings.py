@@ -1,5 +1,7 @@
 """Configuración validada de la aplicación."""
 
+from datetime import date
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Self
@@ -30,6 +32,16 @@ class Settings(BaseSettings):
     external_model: str = "gemini-3.5-flash-lite"
     external_temperature: float = Field(default=0, ge=0, le=2)
     external_top_p: float = Field(default=0.9, gt=0, le=1)
+    external_price_model: str = "gemini-3.5-flash-lite"
+    external_input_price_per_million: Decimal = Field(
+        default=Decimal("0.30"), ge=0
+    )
+    external_output_price_per_million: Decimal = Field(
+        default=Decimal("2.50"), ge=0
+    )
+    external_price_currency: str = "USD"
+    external_price_source: AnyHttpUrl = "https://ai.google.dev/gemini-api/docs/pricing"
+    external_price_checked_on: date = date(2026, 9, 10)
 
     @model_validator(mode="after")
     def validate_retry_window(self) -> Self:

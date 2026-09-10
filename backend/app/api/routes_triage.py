@@ -13,7 +13,7 @@ from backend.app.providers import (
 )
 from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import ErrorResponse, TriageProposalResponse, TriageRequest
-from backend.app.services import TriageService
+from backend.app.services import MetricsService, TriageService
 
 router = APIRouter(prefix="/api/v1", tags=["triage"])
 
@@ -43,6 +43,7 @@ _triage_service = TriageService(
     ),
     max_repair_attempts=_settings.llm_repair_attempts,
 )
+_metrics_service = MetricsService(_settings)
 
 
 def get_triage_service() -> TriageService:
@@ -51,17 +52,17 @@ def get_triage_service() -> TriageService:
     return _triage_service
 
 
+def get_metrics_service() -> MetricsService:
+    """Configuración única para convertir telemetría en métricas públicas."""
+
+    return _metrics_service
+
+
 @lru_cache
 def get_notice_repository() -> SQLiteNoticeRepository:
     """Dependencia sustituible para usar bases temporales en pruebas."""
 
     return SQLiteNoticeRepository(_settings.database_path)
-
-
-def _provider_model(provider: str) -> str | None:
-    if provider == "local":
-        return _settings.local_model or None
-    return _settings.external_model or None
 
 
 @router.post(
@@ -78,16 +79,23 @@ def create_triage(
     payload: TriageRequest,
     request: Request,
     service: Annotated[TriageService, Depends(get_triage_service)],
+    metrics_service: Annotated[MetricsService, Depends(get_metrics_service)],
     repository: Annotated[
         SQLiteNoticeRepository,
         Depends(get_notice_repository),
     ],
 ) -> TriageProposalResponse:
     request_id = request.state.request_id
-    result = service.triage(payload, request_id=request_id)
+    execution = service.execute(payload, request_id=request_id)
+    metrics = metrics_service.build(payload, execution.telemetry)
+    if execution.error is not None:
+        raise execution.error
+    if execution.result is None:
+        raise RuntimeError("La ejecución terminó sin resultado ni error.")
     return repository.create_triage(
         payload,
-        result,
+        execution.result,
         request_id=request_id,
-        model=_provider_model(payload.provider),
+        model=metrics.model,
+        metrics=metrics,
     )

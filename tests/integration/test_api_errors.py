@@ -1,5 +1,6 @@
 """Pruebas HTTP de request_id y errores estables de proveedor y herramienta."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -13,7 +14,12 @@ from backend.app.providers import (
     ProviderRateLimitError,
 )
 from backend.app.repositories import PersistenceError, SQLiteNoticeRepository
-from backend.app.services import InvalidProviderOutputError, TriageService
+from backend.app.services import (
+    ExecutionTelemetry,
+    InvalidProviderOutputError,
+    TriageExecution,
+    TriageService,
+)
 from backend.app.tools import (
     InvalidRiskMatrixError,
     InvalidToolArgumentsError,
@@ -29,8 +35,25 @@ class FailingService:
     def __init__(self, error):
         self.error = error
 
-    def triage(self, request, *, request_id):
-        raise self.error
+    def execute(self, request, *, request_id):
+        now = datetime.now(UTC)
+        return TriageExecution(
+            result=None,
+            telemetry=ExecutionTelemetry(
+                started_at=now,
+                completed_at=now,
+                latency_ms=0,
+                provider_attempts=1,
+                repair_attempts=0,
+                input_tokens=None,
+                output_tokens=None,
+                total_tokens=None,
+                success=False,
+                json_valid=None,
+                error_type=type(self.error).__name__,
+            ),
+            error=self.error,
+        )
 
 
 class FailingRepository:

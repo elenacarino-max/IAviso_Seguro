@@ -51,6 +51,8 @@ def test_first_step_requests_exactly_one_allowed_tool(triage_request):
         return httpx.Response(
             200,
             json={
+                "prompt_eval_count": 55,
+                "eval_count": 4,
                 "message": {
                     "role": "assistant",
                     "content": "",
@@ -66,7 +68,8 @@ def test_first_step_requests_exactly_one_allowed_tool(triage_request):
             },
         )
 
-    result = make_provider(handler).generate(triage_request)
+    provider = make_provider(handler)
+    result = provider.generate(triage_request)
 
     assert result == ToolCall(
         name="consultar_matriz_riesgos",
@@ -79,6 +82,9 @@ def test_first_step_requests_exactly_one_allowed_tool(triage_request):
     assert "format" not in captured
     assert triage_request.text in captured["messages"][2]["content"]
     assert "atributo demográfico" in captured["messages"][0]["content"]
+    assert provider.last_call_metrics.input_tokens == 55
+    assert provider.last_call_metrics.output_tokens == 4
+    assert provider.last_call_metrics.total_tokens == 59
 
 
 def test_final_step_uses_real_observation_and_pydantic_schema(triage_request):

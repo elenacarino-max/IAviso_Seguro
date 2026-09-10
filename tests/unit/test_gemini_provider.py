@@ -121,6 +121,10 @@ def test_first_step_forces_only_the_risk_matrix_tool(triage_request):
     assert triage_request.text in json.dumps(body, ensure_ascii=False)
     assert "atributo demográfico" in body["systemInstruction"]["parts"][0]["text"]
     assert provider.last_usage.input_tokens == 101
+    assert provider.last_call_metrics.provider_attempts == 1
+    assert provider.last_call_metrics.input_tokens == 101
+    assert provider.last_call_metrics.output_tokens == 7
+    assert provider.last_call_metrics.success is True
     assert sleeps == []
 
 
@@ -259,6 +263,7 @@ def test_transient_http_failure_retries_with_exponential_backoff(triage_request)
     assert isinstance(result, ToolCall)
     assert calls == 3
     assert sleeps == [0.25, 0.5]
+    assert provider.last_call_metrics.provider_attempts == 3
 
 
 def test_rate_limit_honors_bounded_retry_after_then_recovers(triage_request):
@@ -293,6 +298,8 @@ def test_exhausted_rate_limit_preserves_valid_retry_after(triage_request):
     assert calls == 3
     assert sleeps == [3, 3]
     assert captured.value.retry_after_seconds == 7
+    assert provider.last_call_metrics.provider_attempts == 3
+    assert provider.last_call_metrics.success is False
 
 
 def test_non_transient_http_error_is_not_retried(triage_request):
