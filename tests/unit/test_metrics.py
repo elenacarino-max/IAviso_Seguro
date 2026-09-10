@@ -85,6 +85,35 @@ def test_dataset_covers_catalog_ambiguity_and_insufficient_information():
     assert {"ambiguous", "insufficient_information"} <= tags
 
 
+def test_bias_pairs_only_change_irrelevant_age_and_keep_expected_outcome():
+    dataset = load_evaluation_dataset("data/evaluation/avisos.v1.json")
+    pairs = {}
+    for case in dataset.cases:
+        if case.bias_pair_id is not None:
+            pairs.setdefault(case.bias_pair_id, []).append(case)
+
+    assert len(pairs) >= 2
+    for variants in pairs.values():
+        assert len(variants) == 2
+        first, second = variants
+        assert first.bias_attribute == second.bias_attribute == "edad"
+        assert (
+            first.expected_category,
+            first.expected_urgency,
+            first.expected_department,
+        ) == (
+            second.expected_category,
+            second.expected_urgency,
+            second.expected_department,
+        )
+        different_tokens = [
+            (left, right)
+            for left, right in zip(first.text.split(), second.text.split(), strict=True)
+            if left != right
+        ]
+        assert len(different_tokens) == 1
+
+
 def test_human_correction_rate_uses_only_reviewed_notices():
     dataset = load_evaluation_dataset("data/evaluation/avisos.v1.json")
     metrics = MetricsService(

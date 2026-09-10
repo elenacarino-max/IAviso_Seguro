@@ -4,14 +4,15 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 8 completada localmente: `local` usa Ollama y `external` usa Gemini con el
+Fase 9 completada localmente: el MVP ofrece un recorrido reproducible desde
+Streamlit hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
 La API permite comparar ambos proveedores con una misma entrada sin crear dos
 avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
 mantienen una revisión humana versionada. El dashboard Streamlit permite crear,
 consultar, revisar y comparar usando exclusivamente la API. La resolución
-operativa del riesgo todavía no está implementada. No procesa avisos reales.
+operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
 
 ## Objetivo
 
@@ -19,7 +20,7 @@ Un trabajador describe una situación peligrosa. El sistema consulta una matriz 
 
 La adaptación del alcance académico de servicios urbanos a riesgos laborales está aprobada, según confirmación de la responsable del proyecto el 7 de septiembre de 2026.
 
-## Arquitectura propuesta
+## Arquitectura implementada
 
 - Backend: Python, FastAPI y validación estricta con Pydantic.
 - Interfaz: Streamlit, comunicada exclusivamente con la API.
@@ -56,6 +57,11 @@ python -m venv .venv
 python -m pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
+
+Para reproducir exactamente el entorno validado de cierre se puede sustituir la
+instalación anterior por `python -m pip install -r requirements-lock.txt`. El
+lock fue generado con Python 3.14 en Windows; `requirements.txt` mantiene los
+rangos compatibles de las dependencias directas realmente usadas.
 
 Antes de arrancar la API, inicia Ollama y prepara un modelo con llamadas de
 herramienta. El modelo es configurable; este ejemplo coincide con la prueba manual:
@@ -132,6 +138,8 @@ Variables del proveedor externo:
 Si falta la clave externa, la API responde `503` sin intentar una conexión. Un
 aviso nunca se redirige implícitamente a otro proveedor.
 
+## Prompts, herramienta y seguridad
+
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
 El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. Los prompts separan sistema, ejemplos sintéticos, aviso, contexto de herramienta y formato. Indican que se ignoren atributos demográficos irrelevantes. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
@@ -145,6 +153,8 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
   "request_id": "uuid-generado-por-el-servidor"
 }
 ```
+
+## Métricas y resiliencia
 
 El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
 entre 0 y 3. Los reintentos externos son independientes de esas reparaciones:
@@ -163,6 +173,35 @@ aprobada/modificada/rechazada, panel general y comparación entre proveedores.
 La urgencia se presenta siempre con texto explícito además del color. Los
 errores de API se convierten en mensajes seguros y todas las pantallas mantienen
 visible el recordatorio de revisión profesional y protocolo de emergencia.
+
+## Demos sintéticas
+
+Las demos no necesitan credenciales, Ollama ni datos reales:
+
+```powershell
+python -m scripts.run_demos --scenario main
+python -m scripts.run_demos --scenario repair
+python -m scripts.run_demos --scenario rate-limit
+# Ejecutar las tres:
+python -m scripts.run_demos --scenario all
+```
+
+`main` crea, consulta y aprueba humanamente una propuesta mediante la API;
+`repair` muestra una salida JSON inválida y su única reparación; `rate-limit`
+simula un `429`, respeta `Retry-After` y se recupera sin realizar esperas ni
+conexiones reales.
+
+## Ética y límites
+
+- Los textos, matrices y datasets incluidos son sintéticos y didácticos.
+- La urgencia no cambia por atributos demográficos irrelevantes; el dataset
+  contiene pares que solo varían la edad y conservan la etiqueta esperada.
+- Un resultado del modelo siempre es una propuesta pendiente de validación
+  humana, no una decisión operativa ni una evaluación preventiva acreditada.
+- Ante un peligro inmediato debe aplicarse el protocolo de emergencia del
+  centro; la aplicación no sustituye ese protocolo.
+- No se versionan credenciales, bases locales, logs ni la documentación interna
+  de `docs/`.
 
 ### Prueba manual local verificada
 

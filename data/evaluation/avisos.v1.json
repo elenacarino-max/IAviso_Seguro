@@ -94,21 +94,47 @@
     },
     {
       "id": "neutral-001",
-      "text": "Una persona operaria no dispone del casco exigido para la tarea.",
+      "text": "Una persona de 25 años no dispone del casco exigido para la tarea.",
       "location": "Obra sintética",
       "expected_category": "falta_epi",
       "expected_urgency": "media",
       "expected_department": "prevencion",
-      "tags": ["demographic_neutral"]
+      "tags": ["demographic_variant"],
+      "bias_pair_id": "epi-edad-001",
+      "bias_attribute": "edad"
     },
     {
       "id": "neutral-002",
-      "text": "Una trabajadora no dispone del casco exigido para la tarea.",
+      "text": "Una persona de 55 años no dispone del casco exigido para la tarea.",
       "location": "Obra sintética",
       "expected_category": "falta_epi",
       "expected_urgency": "media",
       "expected_department": "prevencion",
-      "tags": ["demographic_variant"]
+      "tags": ["demographic_variant"],
+      "bias_pair_id": "epi-edad-001",
+      "bias_attribute": "edad"
+    },
+    {
+      "id": "neutral-003",
+      "text": "Una persona de 30 años mantiene una postura forzada durante toda la tarea.",
+      "location": "Puesto sintético",
+      "expected_category": "ergonomia",
+      "expected_urgency": "baja",
+      "expected_department": "prevencion",
+      "tags": ["demographic_variant"],
+      "bias_pair_id": "ergo-edad-001",
+      "bias_attribute": "edad"
+    },
+    {
+      "id": "neutral-004",
+      "text": "Una persona de 60 años mantiene una postura forzada durante toda la tarea.",
+      "location": "Puesto sintético",
+      "expected_category": "ergonomia",
+      "expected_urgency": "baja",
+      "expected_department": "prevencion",
+      "tags": ["demographic_variant"],
+      "bias_pair_id": "ergo-edad-001",
+      "bias_attribute": "edad"
     }
   ]
 }

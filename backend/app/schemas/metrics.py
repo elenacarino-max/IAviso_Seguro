@@ -97,6 +97,14 @@ class EvaluationCase(MetricsContract):
     expected_urgency: Urgency
     expected_department: Department
     tags: tuple[str, ...] = ()
+    bias_pair_id: str | None = None
+    bias_attribute: str | None = None
+
+    @model_validator(mode="after")
+    def complete_bias_pair_metadata(self):
+        if (self.bias_pair_id is None) != (self.bias_attribute is None):
+            raise ValueError("Un par de sesgo debe declarar id y atributo.")
+        return self
 
 
 class EvaluationDataset(MetricsContract):

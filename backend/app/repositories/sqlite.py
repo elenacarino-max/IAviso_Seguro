@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
@@ -139,7 +140,7 @@ class SQLiteNoticeRepository:
 
     def _initialize(self) -> None:
         try:
-            with self._connect() as connection:
+            with closing(self._connect()) as connection:
                 connection.executescript(_SCHEMA)
                 columns = {
                     row["name"]
@@ -286,7 +287,7 @@ class SQLiteNoticeRepository:
 
     def list_notices(self) -> tuple[NoticeRecord, ...]:
         try:
-            with self._connect() as connection:
+            with closing(self._connect()) as connection:
                 rows = connection.execute(
                     """
                     SELECT
@@ -488,7 +489,7 @@ class SQLiteNoticeRepository:
 
     def list_audit_events(self, notice_id: UUID) -> tuple[AuditEventRecord, ...]:
         try:
-            with self._connect() as connection:
+            with closing(self._connect()) as connection:
                 rows = connection.execute(
                     """
                     SELECT id, notice_id, triage_run_id, event_type,
