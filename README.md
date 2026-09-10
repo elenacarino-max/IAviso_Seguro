@@ -4,13 +4,14 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 7 completada localmente: `local` usa Ollama y `external` usa Gemini con el
+Fase 8 completada localmente: `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
 La API permite comparar ambos proveedores con una misma entrada sin crear dos
 avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
-mantienen una revisión humana versionada. La resolución operativa del riesgo y
-el dashboard todavía no están implementados. No procesa avisos reales.
+mantienen una revisión humana versionada. El dashboard Streamlit permite crear,
+consultar, revisar y comparar usando exclusivamente la API. La resolución
+operativa del riesgo todavía no está implementada. No procesa avisos reales.
 
 ## Objetivo
 
@@ -38,7 +39,7 @@ backend/app/
   tools/         Consulta de la matriz de riesgos
   prompts/       Instrucciones y ejemplos versionados
   repositories/  Persistencia de avisos y decisiones
-frontend/        Dashboard
+frontend/        Dashboard Streamlit y cliente HTTP
 config/          Configuración de dominio y matriz de referencia
 data/           Ejemplos, evaluación sintética y almacenamiento local
 tests/          Pruebas unitarias, integración y respuestas simuladas
@@ -76,6 +77,15 @@ Arrancar la API desde la raíz:
 ```powershell
 python -m uvicorn backend.app.main:app --reload
 ```
+
+En otra terminal, arrancar el dashboard:
+
+```powershell
+python -m streamlit run frontend/app.py
+```
+
+La interfaz abre normalmente en `http://localhost:8501` y usa
+`API_BASE_URL=http://127.0.0.1:8000` por defecto.
 
 Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 
@@ -147,6 +157,12 @@ tarifa no corresponde exactamente al modelo usado. El conjunto
 `data/evaluation/avisos.v1.json` está separado de los ejemplos few-shot y cubre
 las nueve categorías, ambigüedad, información insuficiente y variantes
 demográficas. Sus resultados son académicos, no una referencia profesional.
+
+El dashboard ofrece alta de avisos, bandeja de propuestas pendientes, revisión
+aprobada/modificada/rechazada, panel general y comparación entre proveedores.
+La urgencia se presenta siempre con texto explícito además del color. Los
+errores de API se convierten en mensajes seguros y todas las pantallas mantienen
+visible el recordatorio de revisión profesional y protocolo de emergencia.
 
 ### Prueba manual local verificada
 

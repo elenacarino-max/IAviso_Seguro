@@ -1,4 +1,4 @@
-# Dependencias propuestas; validar y fijar versiones en la primera entrega funcional.
+# Dependencias del MVP; falta congelar versiones resueltas para la entrega final.
 fastapi>=0.115,<1
 uvicorn>=0.30,<1
 pydantic>=2.9,<3

@@ -9,3 +9,7 @@ Las pruebas utilizan el proveedor simulado y una base SQLite temporal por caso;
 no realizan conexiones externas ni escriben en la base de desarrollo.
 La comparación verifica además que una entrada común no crea avisos finales
 duplicados.
+
+`test_frontend_smoke.py` usa el runner de Streamlit para comprobar que la
+interfaz arranca, muestra el aviso de seguridad y ofrece el formulario principal
+sin necesitar una API activa.

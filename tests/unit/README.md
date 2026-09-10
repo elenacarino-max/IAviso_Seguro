@@ -10,3 +10,5 @@ También se validan los contratos de revisión y las transacciones SQLite con
 aprobación, modificación, rechazo, auditoría y competencia entre revisores.
 La fase de métricas añade cobertura de tokens, retries, costes conocidos y
 desconocidos, dataset sintético y denominador de corrección humana.
+El cliente del frontend se prueba con transporte HTTP simulado para cubrir alta,
+consulta, revisión, comparación y mensajes de error seguros.
