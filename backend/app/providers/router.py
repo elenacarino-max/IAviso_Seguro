@@ -4,7 +4,7 @@ from collections.abc import Mapping
 
 from backend.app.schemas import RiskMatrixObservation, TriageRequest
 
-from .base import ProviderStep, RepairContext, TriageProvider
+from .base import ProviderStep, RepairContext, ToolCall, TriageProvider
 from .errors import ProviderConnectionError
 
 
@@ -20,10 +20,16 @@ class ProviderRouter:
         *,
         observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
+        tool_call: ToolCall | None = None,
     ) -> ProviderStep:
         provider = self._providers.get(request.provider)
         if provider is None:
             raise ProviderConnectionError(
                 "El proveedor solicitado todavía no está configurado."
             )
-        return provider.generate(request, observation=observation, repair=repair)
+        return provider.generate(
+            request,
+            observation=observation,
+            repair=repair,
+            tool_call=tool_call,
+        )

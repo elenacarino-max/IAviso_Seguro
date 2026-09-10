@@ -5,7 +5,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 
 from backend.app.core.settings import get_settings
-from backend.app.providers import OllamaTriageProvider, ProviderRouter
+from backend.app.providers import (
+    GeminiTriageProvider,
+    OllamaTriageProvider,
+    ProviderRouter,
+)
 from backend.app.schemas import ErrorResponse, TriageRequest, TriageResult
 from backend.app.services import TriageService
 
@@ -21,7 +25,18 @@ _triage_service = TriageService(
                 timeout_seconds=_settings.llm_timeout_seconds,
                 temperature=_settings.ollama_temperature,
                 top_p=_settings.ollama_top_p,
-            )
+            ),
+            "external": GeminiTriageProvider(
+                base_url=str(_settings.external_api_base_url),
+                api_key=_settings.external_api_key.get_secret_value(),
+                model=_settings.external_model,
+                timeout_seconds=_settings.llm_timeout_seconds,
+                temperature=_settings.external_temperature,
+                top_p=_settings.external_top_p,
+                max_retries=_settings.llm_max_retries,
+                retry_base_seconds=_settings.llm_retry_base_seconds,
+                retry_max_seconds=_settings.llm_retry_max_seconds,
+            ),
         }
     ),
     max_repair_attempts=_settings.llm_repair_attempts,

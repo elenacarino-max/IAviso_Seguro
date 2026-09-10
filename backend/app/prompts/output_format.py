@@ -13,8 +13,8 @@ Ejemplo de resumen de diez palabras:
 """.strip()
 
 
-def ollama_output_schema() -> dict[str, object]:
-    """Deriva el subconjunto de JSON Schema aceptado por la gramática de Ollama."""
+def provider_output_schema() -> dict[str, object]:
+    """Deriva un JSON Schema sencillo; la aplicación aplica el contrato completo."""
 
     source = TriageResult.model_json_schema()
     properties = {
@@ -30,3 +30,9 @@ def ollama_output_schema() -> dict[str, object]:
         "properties": properties,
         "required": source["required"],
     }
+
+
+def ollama_output_schema() -> dict[str, object]:
+    """Conserva el nombre público utilizado por el adaptador y sus pruebas."""
+
+    return provider_output_schema()

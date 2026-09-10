@@ -42,10 +42,12 @@ class SequenceProvider:
         self.steps = list(steps)
         self.observations = []
         self.repairs: list[RepairContext | None] = []
+        self.tool_calls = []
 
-    def generate(self, request, *, observation=None, repair=None):
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
         self.observations.append(observation)
         self.repairs.append(repair)
+        self.tool_calls.append(tool_call)
         return self.steps.pop(0)
 
 

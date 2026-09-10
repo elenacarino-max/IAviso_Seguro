@@ -46,6 +46,7 @@ class OllamaTriageProvider:
         *,
         observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
+        tool_call: ToolCall | None = None,
     ) -> ProviderStep:
         if not self._model:
             raise ProviderConnectionError("No hay un modelo local configurado.")

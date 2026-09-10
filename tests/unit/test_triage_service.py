@@ -36,10 +36,12 @@ class SequenceProvider:
         self.outputs = list(outputs)
         self.repairs: list[RepairContext | None] = []
         self.observations = []
+        self.tool_calls = []
 
-    def generate(self, request, *, observation=None, repair=None):
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
         self.observations.append(observation)
         self.repairs.append(repair)
+        self.tool_calls.append(tool_call)
         output = self.outputs.pop(0)
         if isinstance(output, Exception):
             raise output

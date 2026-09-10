@@ -61,7 +61,7 @@ def test_success_response_has_generated_request_id():
     UUID(response.headers["X-Request-ID"])
 
 
-def test_external_provider_is_explicitly_unavailable_until_phase_five():
+def test_external_provider_without_api_key_fails_safely():
     response = client.post(
         "/api/v1/triage",
         json={"text": "Aviso sintético.", "provider": "external"},

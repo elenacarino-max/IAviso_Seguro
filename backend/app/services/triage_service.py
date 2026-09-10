@@ -53,6 +53,7 @@ class TriageService:
     def triage(self, request: TriageRequest, *, request_id: str) -> TriageResult:
         observation: RiskMatrixObservation | None = None
         repair: RepairContext | None = None
+        tool_call: ToolCall | None = None
         repairs_used = 0
         max_provider_steps = self._max_repair_attempts + _MAX_TOOL_STEPS + 1
 
@@ -62,6 +63,7 @@ class TriageService:
                     request,
                     observation=observation,
                     repair=repair,
+                    tool_call=tool_call,
                 )
             except (ProviderConnectionError, ProviderRateLimitError) as exc:
                 _logger.warning(
@@ -115,6 +117,7 @@ class TriageService:
                         "outcome": "accepted",
                     },
                 )
+                tool_call = candidate
                 repair = None
                 continue
 

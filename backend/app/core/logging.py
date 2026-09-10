@@ -14,6 +14,16 @@ _STRUCTURED_FIELDS = (
     "tool_arguments",
     "matrix_version",
     "tool_result",
+    "provider",
+    "model",
+    "provider_attempt",
+    "retry_count",
+    "status_code",
+    "latency_ms",
+    "retry_after_seconds",
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
 )
 
 

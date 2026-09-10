@@ -1,7 +1,7 @@
 """Contrato mínimo que deben cumplir los proveedores de triaje."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from backend.app.schemas import RiskMatrixObservation, TriageRequest
@@ -14,6 +14,9 @@ class ToolCall:
 
     name: str
     arguments: Mapping[str, object]
+    provider_context: Mapping[str, object] | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 ProviderStep = ProviderOutput | ToolCall
@@ -37,6 +40,7 @@ class TriageProvider(Protocol):
         *,
         observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
+        tool_call: ToolCall | None = None,
     ) -> ProviderStep:
         """Solicita una herramienta o genera una salida candidata."""
         ...

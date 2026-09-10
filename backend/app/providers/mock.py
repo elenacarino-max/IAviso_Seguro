@@ -14,6 +14,7 @@ class MockTriageProvider:
         *,
         observation: RiskMatrixObservation | None = None,
         repair: RepairContext | None = None,
+        tool_call: ToolCall | None = None,
     ) -> ProviderStep:
         if observation is None:
             return ToolCall(

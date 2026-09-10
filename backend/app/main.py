@@ -16,7 +16,7 @@ def create_app() -> FastAPI:
     application = FastAPI(
         title="IAviso Seguro",
         description="API académica de triaje asistido de riesgos laborales.",
-        version="0.4.0",
+        version="0.5.0",
     )
 
     @application.middleware("http")

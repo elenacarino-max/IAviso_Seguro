@@ -4,7 +4,13 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 4 completada: el proveedor `local` usa Ollama mediante `/api/chat`, con modelo y parámetros configurables, una llamada de herramienta y salida estructurada validada por el mismo contrato Pydantic que el mock. La API conserva la reparación acotada, los errores controlados, el `request_id` y los logs JSON sin el texto del aviso. El proveedor externo, la persistencia y el dashboard todavía no están implementados. No procesa avisos reales.
+Fase 5 completada localmente: `local` usa Ollama mediante `/api/chat` y
+`external` usa Gemini mediante `generateContent`. Ambos ejecutan una llamada de
+herramienta y validan la salida con el mismo contrato Pydantic. Gemini conserva
+el contexto opaco requerido por sus modelos, aplica retry y backoff acotados
+solo a fallos transitorios y registra latencia y tokens informados sin incluir
+credenciales ni el texto del aviso. La persistencia y el dashboard todavía no
+están implementados. No procesa avisos reales.
 
 ## Objetivo
 
@@ -76,6 +82,8 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
+# Requiere EXTERNAL_API_KEY en .env:
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","provider":"external"}'
 ```
 
 Variables del proveedor local:
@@ -85,8 +93,18 @@ Variables del proveedor local:
 - `LLM_TIMEOUT_SECONDS`: tiempo máximo de cada llamada.
 - `OLLAMA_TEMPERATURE` y `OLLAMA_TOP_P`: parámetros de muestreo validados.
 
-La ruta `external` responde de forma controlada con `503` hasta que se implemente
-la Fase 5; un aviso nunca se redirige implícitamente a otro proveedor.
+Variables del proveedor externo:
+
+- `EXTERNAL_API_BASE_URL`: base de la API REST de Gemini.
+- `EXTERNAL_API_KEY`: secreto obligatorio para usar `provider=external`.
+- `EXTERNAL_MODEL`: modelo de Gemini; por defecto `gemini-3.5-flash-lite`.
+- `EXTERNAL_TEMPERATURE` y `EXTERNAL_TOP_P`: parámetros de muestreo validados.
+- `LLM_MAX_RETRIES`: reintentos de transporte, `429` y HTTP transitorios.
+- `LLM_RETRY_BASE_SECONDS` y `LLM_RETRY_MAX_SECONDS`: backoff exponencial y
+  límite máximo de espera.
+
+Si falta la clave externa, la API responde `503` sin intentar una conexión. Un
+aviso nunca se redirige implícitamente a otro proveedor.
 
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
@@ -101,7 +119,9 @@ Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor, herram
 }
 ```
 
-El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS` entre 0 y 3. Los reintentos de conexión y el backoff pertenecen a la futura integración del proveedor externo.
+El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
+entre 0 y 3. Los reintentos externos son independientes de esas reparaciones:
+solo cubren fallos transitorios y quedan limitados por la configuración anterior.
 
 ### Prueba manual local verificada
 
