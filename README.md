@@ -4,26 +4,28 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 9 completada localmente: el MVP ofrece un recorrido reproducible desde
-Streamlit hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
+Fase 9 completada: el MVP ofrece un recorrido reproducible desde una SPA React
+hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
 La API permite comparar ambos proveedores con una misma entrada sin crear dos
 avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
-mantienen una revisión humana versionada. El dashboard Streamlit permite crear,
-consultar, revisar y comparar usando exclusivamente la API. La resolución
+mantienen una revisión humana versionada. La interfaz React permite crear,
+consultar, revisar y comparar usando exclusivamente la API; Streamlit se conserva
+como respaldo académico. La resolución
 operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
 
 ## Objetivo
 
 Un trabajador describe una situación peligrosa. El sistema consulta una matriz de referencia, propone categoría, urgencia, resumen y departamento, y presenta la propuesta a un técnico para aprobarla, modificarla o rechazarla. La clasificación final requiere revisión humana.
 
-La adaptación del alcance académico de servicios urbanos a riesgos laborales está aprobada, según confirmación de la responsable del proyecto el 7 de septiembre de 2026.
+
 
 ## Arquitectura implementada
 
 - Backend: Python, FastAPI y validación estricta con Pydantic.
-- Interfaz: Streamlit, comunicada exclusivamente con la API.
+- Interfaz principal: React, TypeScript y Vite, comunicada exclusivamente con la API.
+- Interfaz de respaldo: Streamlit, conservada para el requisito académico original.
 - Modelos: uno local mediante Ollama y uno externo mediante un adaptador independiente.
 - Persistencia: SQLite para el prototipo, separando propuestas y decisiones finales.
 - Evaluación: Pytest y casos sintéticos comunes a ambos proveedores.
@@ -40,7 +42,8 @@ backend/app/
   tools/         Consulta de la matriz de riesgos
   prompts/       Instrucciones y ejemplos versionados
   repositories/  Persistencia de avisos y decisiones
-frontend/        Dashboard Streamlit y cliente HTTP
+frontend-react/  SPA principal React/TypeScript
+frontend/        Dashboard Streamlit de respaldo y cliente HTTP
 config/          Configuración de dominio y matriz de referencia
 data/           Ejemplos, evaluación sintética y almacenamiento local
 tests/          Pruebas unitarias, integración y respuestas simuladas
@@ -84,14 +87,24 @@ Arrancar la API desde la raíz:
 python -m uvicorn backend.app.main:app --reload
 ```
 
-En otra terminal, arrancar el dashboard:
+En otra terminal, instalar y arrancar la interfaz principal (Node 20.19+ o
+22.12+):
+
+```powershell
+cd frontend-react
+npm install
+npm run dev
+```
+
+La interfaz abre en `http://127.0.0.1:5173` y Vite redirige `/api` a
+`http://127.0.0.1:8000`. Para validar el frontend: `npm test` y
+`npm run build`.
+
+El dashboard Streamlit se conserva como fallback y puede arrancarse desde la raíz:
 
 ```powershell
 python -m streamlit run frontend/app.py
 ```
-
-La interfaz abre normalmente en `http://localhost:8501` y usa
-`API_BASE_URL=http://127.0.0.1:8000` por defecto.
 
 Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 
@@ -168,7 +181,7 @@ tarifa no corresponde exactamente al modelo usado. El conjunto
 las nueve categorías, ambigüedad, información insuficiente y variantes
 demográficas. Sus resultados son académicos, no una referencia profesional.
 
-El dashboard ofrece alta de avisos, bandeja de propuestas pendientes, revisión
+La SPA React ofrece alta de avisos, bandeja de propuestas pendientes, revisión
 aprobada/modificada/rechazada, panel general y comparación entre proveedores.
 La urgencia se presenta siempre con texto explícito además del color. Los
 errores de API se convierten en mensajes seguros y todas las pantallas mantienen

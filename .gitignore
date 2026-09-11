@@ -10,6 +10,7 @@ venv/
 # Python y herramientas
 __pycache__/
 *.py[cod]
+node_modules/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
