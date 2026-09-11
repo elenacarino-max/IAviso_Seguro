@@ -139,6 +139,75 @@ def test_repair_context_is_separate_and_contains_only_contract_feedback(triage_r
     assert "SALIDA RECHAZADA" in repair_message
 
 
+def test_tool_argument_repair_is_sent_before_matrix_execution(triage_request):
+    captured = {}
+
+    def handler(http_request):
+        captured.update(json.loads(http_request.content))
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "consultar_matriz_riesgos",
+                                "arguments": {"category": "incendio"},
+                            }
+                        }
+                    ],
+                }
+            },
+        )
+
+    result = make_provider(handler).generate(
+        triage_request,
+        repair=RepairContext(
+            invalid_output={
+                "name": "consultar_matriz_riesgos",
+                "arguments": {"category": "riesgo_incendio"},
+            },
+            validation_errors=("tool_arguments:invalid",),
+        ),
+    )
+
+    assert result == ToolCall(
+        name="consultar_matriz_riesgos",
+        arguments={"category": "incendio"},
+    )
+    assert "tool_arguments:invalid" in captured["messages"][-1]["content"]
+    assert "una categoría exacta" in captured["messages"][-1]["content"]
+
+
+def test_summary_word_count_repair_has_exact_safe_fallback(triage_request):
+    captured = {}
+
+    def handler(http_request):
+        captured.update(json.loads(http_request.content))
+        return httpx.Response(200, json={"message": {"content": "{}"}})
+
+    observation = RiskMatrixTool().execute({"category": "incendio"})
+    make_provider(handler).generate(
+        triage_request,
+        observation=observation,
+        repair=RepairContext(
+            invalid_output='{"summary":"Resumen de nueve palabras"}',
+            validation_errors=(
+                "summary:value_error:Value error, El resumen debe contener "
+                "exactamente 10 palabras; se recibieron 4.",
+            ),
+        ),
+    )
+
+    repair_message = captured["messages"][-1]["content"]
+    assert (
+        "Aviso requiere evaluación técnica y revisión profesional antes de actuar."
+        in repair_message
+    )
+    assert "Son 10 palabras." in repair_message
+
+
 def test_timeout_becomes_controlled_connection_error(triage_request):
     def handler(http_request):
         raise httpx.ReadTimeout("demasiado lento", request=http_request)

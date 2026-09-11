@@ -1,7 +1,9 @@
 import type {
   ApiFailure,
+  ComparisonResponse,
   CreateTriageInput,
   Notice,
+  RiskMatrixDocument,
   ReviewInput,
   TriageProposal,
   TriageRun,
@@ -57,17 +59,17 @@ const object = (value: unknown): Record<string, any> =>
 const proposalFrom = (raw: unknown): TriageProposal => {
   const item = object(raw);
   return {
-    category: String(item.category ?? item.categoria ?? "Sin categoría"),
-    urgency: String(item.urgency ?? item.urgencia ?? "Sin determinar"),
+    category: String(item.category ?? item.categoria ?? "otros") as TriageProposal["category"],
+    urgency: String(item.urgency ?? item.urgencia ?? "media") as TriageProposal["urgency"],
     summary: String(item.summary ?? item.resumen ?? "Sin resumen"),
-    department: String(item.department ?? item.departamento ?? "Sin asignar"),
+    department: String(item.department ?? item.departamento ?? "prevencion") as TriageProposal["department"],
     justification: item.justification ?? item.justificacion,
   };
 };
 
 const runFrom = (raw: unknown): TriageRun => {
   const item = object(raw);
-  const proposal = item.proposal ?? item.original_proposal ?? item.classification ?? item;
+  const proposal = item.result ?? item.proposal ?? item.original_proposal ?? item.classification ?? item;
   return {
     triage_run_id: String(item.triage_run_id ?? item.run_id ?? item.id ?? ""),
     provider: String(item.provider ?? "—"),
@@ -113,6 +115,10 @@ export const api = {
     return Array.isArray(items) ? items.map(noticeFrom) : [];
   },
 
+  async getRiskMatrix(): Promise<RiskMatrixDocument> {
+    return request<RiskMatrixDocument>("/api/v1/risk-matrix");
+  },
+
   async reviewNotice(noticeId: string, input: ReviewInput): Promise<Record<string, any>> {
     return request(`/api/v1/notices/${encodeURIComponent(noticeId)}/reviews`, {
       method: "POST",
@@ -120,12 +126,12 @@ export const api = {
     });
   },
 
-  async compare(text: string, location: string | null): Promise<Record<string, any>> {
-    return request("/api/v1/comparisons", {
+  async compare(text: string, location: string | null): Promise<ComparisonResponse> {
+    return request<ComparisonResponse>("/api/v1/comparisons", {
       method: "POST",
       body: JSON.stringify({ text, location }),
     });
   },
 };
 
-export const normalizeTriageResponse = (raw: Record<string, any>): TriageRun => runFrom(raw);
+export const normalizeTriageResponse = (raw: unknown): TriageRun => runFrom(raw);

@@ -1,0 +1,11 @@
+diff --git a/backend/app/prompts/messages.py b/backend/app/prompts/messages.py
+--- a/backend/app/prompts/messages.py
++++ b/backend/app/prompts/messages.py
+@@ -14,7 +14,7 @@ from .output_format import (
+     provider_output_schema,
+ )
+ from .system import SYSTEM_PROMPT
+-from .tool_context import TOOL_SELECTION_PROMPT
++from .tool_context import RISK_MATRIX_TOOL, TOOL_SELECTION_PROMPT
+ 
+ if TYPE_CHECKING:

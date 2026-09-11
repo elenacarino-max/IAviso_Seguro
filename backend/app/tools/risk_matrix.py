@@ -39,9 +39,7 @@ class RiskMatrixTool:
             ) from exc
 
     def execute(self, arguments: Mapping[str, object]) -> RiskMatrixObservation:
-        if self._document is None:
-            self._document = self._load(self._matrix_path)
-            self._rules = {rule.category: rule for rule in self._document.rules}
+        document = self.document()
 
         try:
             query = RiskMatrixQuery.model_validate(arguments)
@@ -54,14 +52,22 @@ class RiskMatrixTool:
         return RiskMatrixObservation(
             tool_name=self.name,
             arguments=query,
-            matrix_version=self._document.version,
+            matrix_version=document.version,
             rule_id=rule.rule_id,
             conditions=rule.conditions,
             recommended_urgency=rule.recommended_urgency,
             department=rule.department,
             evidence=rule.evidence,
-            disclaimer=self._document.disclaimer,
+            disclaimer=document.disclaimer,
         )
+
+    def document(self) -> RiskMatrixDocument:
+        """Devuelve la matriz completa validada para interfaces de consulta."""
+
+        if self._document is None:
+            self._document = self._load(self._matrix_path)
+            self._rules = {rule.category: rule for rule in self._document.rules}
+        return self._document
 
 
 def consultar_matriz_riesgos(

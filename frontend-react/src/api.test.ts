@@ -41,6 +41,26 @@ describe("cliente de FastAPI", () => {
     });
   });
 
+  it("consulta la matriz mediante la API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          version: "1.0.0",
+          disclaimer: "Matriz didáctica.",
+          rules: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await api.getRiskMatrix();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/risk-matrix",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
   it("normaliza los identificadores y la propuesta devueltos por el backend", () => {
     expect(normalizeTriageResponse({
       id: "r-1",
@@ -54,6 +74,32 @@ describe("cliente de FastAPI", () => {
     })).toMatchObject({
       triage_run_id: "r-1",
       proposal: { category: "caidas", urgency: "alta", department: "mantenimiento" },
+    });
+  });
+
+  it("normaliza la propuesta anidada de una comparación", () => {
+    expect(normalizeTriageResponse({
+      provider: "external",
+      result: {
+        category: "incendio",
+        urgency: "critica",
+        summary: "Humo visible junto a salida requiere revisión técnica inmediata preventiva.",
+        department: "seguridad",
+        justification: "Caso sintético.",
+      },
+      metrics: {
+        latency_ms: 25,
+        total_tokens: 42,
+        api_cost: "0.001",
+        api_cost_currency: "USD",
+      },
+    })).toMatchObject({
+      provider: "external",
+      proposal: {
+        category: "incendio",
+        urgency: "critica",
+        department: "seguridad",
+      },
     });
   });
 });

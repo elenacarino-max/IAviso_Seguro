@@ -32,6 +32,27 @@ def test_health_reports_service_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_risk_matrix_endpoint_exposes_the_validated_catalog():
+    response = client.get("/api/v1/risk-matrix")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == "1.0.0"
+    assert len(body["rules"]) == 9
+    assert {item["category"] for item in body["rules"]} == {
+        "riesgo_electrico",
+        "caidas_obstaculos",
+        "incendio",
+        "maquinaria",
+        "sustancias_peligrosas",
+        "problemas_estructurales",
+        "falta_epi",
+        "ergonomia",
+        "otros",
+    }
+    assert "no es normativa" in body["disclaimer"].lower()
+
+
 @pytest.mark.parametrize("provider", ["local", "external"])
 def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider):
     response = client.post(

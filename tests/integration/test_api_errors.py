@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.app.api.routes_triage import get_notice_repository, get_triage_service
 from backend.app.main import app
 from backend.app.providers import (
+    GeminiTriageProvider,
     MockTriageProvider,
     ProviderConnectionError,
     ProviderRateLimitError,
@@ -101,10 +102,27 @@ def test_success_response_has_generated_request_id():
 
 
 def test_external_provider_without_api_key_fails_safely():
-    response = client.post(
-        "/api/v1/triage",
-        json={"text": "Aviso sintético.", "provider": "external"},
+    service = TriageService(
+        GeminiTriageProvider(
+            base_url="https://example.invalid",
+            api_key="",
+            model="gemini-test",
+            timeout_seconds=1,
+            temperature=0,
+            top_p=1,
+            max_retries=0,
+            retry_base_seconds=0,
+            retry_max_seconds=0,
+        )
     )
+    app.dependency_overrides[get_triage_service] = lambda: service
+    try:
+        response = client.post(
+            "/api/v1/triage",
+            json={"text": "Aviso sintético.", "provider": "external"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_triage_service, None)
 
     assert_stable_error(
         response,

@@ -113,7 +113,38 @@ def test_unknown_category_from_provider_is_controlled(triage_request):
     )
 
     with pytest.raises(InvalidToolArgumentsError):
-        TriageService(provider).triage(triage_request, request_id="req-category")
+        TriageService(provider, max_repair_attempts=0).triage(
+            triage_request,
+            request_id="req-category",
+        )
+
+
+def test_invalid_category_from_provider_is_repaired_once(triage_request):
+    provider = SequenceProvider(
+        ToolCall(
+            name="consultar_matriz_riesgos",
+            arguments={"category": "riesgo_incendio"},
+        ),
+        MATRIX_CALL,
+        INCENDIO_RESULT,
+    )
+    tool = RecordingTool()
+
+    result = TriageService(
+        provider,
+        risk_matrix_tool=tool,
+        max_repair_attempts=1,
+    ).triage(triage_request, request_id="req-category-repair")
+
+    assert result.category == "incendio"
+    assert tool.calls == [
+        {"category": "riesgo_incendio"},
+        {"category": "incendio"},
+    ]
+    assert provider.repairs[1] is not None
+    assert provider.repairs[1].validation_errors == (
+        "tool_arguments:invalid:usa exactamente una categoría permitida por el esquema",
+    )
 
 
 def test_second_tool_call_exceeds_step_limit(triage_request):

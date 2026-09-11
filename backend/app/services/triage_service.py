@@ -166,6 +166,33 @@ class TriageService:
                     )
                 try:
                     observation = self._risk_matrix_tool.execute(candidate.arguments)
+                except InvalidToolArgumentsError as exc:
+                    _logger.warning(
+                        "tool_execution",
+                        extra={
+                            "request_id": request_id,
+                            "step": step,
+                            "tool_name": candidate.name,
+                            "outcome": "rejected",
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    if repairs_used == self._max_repair_attempts:
+                        raise
+                    repairs_used += 1
+                    accumulator.repair_attempts = repairs_used
+                    repair = RepairContext(
+                        invalid_output={
+                            "name": candidate.name,
+                            "arguments": dict(candidate.arguments),
+                        },
+                        validation_errors=(
+                            "tool_arguments:invalid:usa exactamente una categoría "
+                            "permitida por el esquema",
+                        ),
+                    )
+                    tool_call = None
+                    continue
                 except ToolError as exc:
                     _logger.warning(
                         "tool_execution",

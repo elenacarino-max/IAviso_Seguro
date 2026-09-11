@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  BookOpen,
+  Braces,
   Check,
   ChevronRight,
   ClipboardCheck,
@@ -21,16 +23,43 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, api, normalizeTriageResponse } from "./api";
-import type { Notice, Provider, ReviewDecision, TriageRun, View } from "./types";
+import type {
+  Category,
+  ComparisonResponse,
+  Department,
+  Notice,
+  Provider,
+  RiskMatrixDocument,
+  ReviewDecision,
+  TriageProposal,
+  TriageRun,
+  Urgency,
+  View,
+} from "./types";
 
 const NAV: Array<{ id: View; label: string; hint: string; icon: typeof Plus }> = [
   { id: "new", label: "Nuevo aviso", hint: "Clasificar", icon: Plus },
   { id: "inbox", label: "Bandeja", hint: "Revisar", icon: Inbox },
   { id: "dashboard", label: "Panel", hint: "Supervisar", icon: BarChart3 },
+  { id: "matrix", label: "Matriz", hint: "Consultar", icon: BookOpen },
   { id: "compare", label: "Comparación", hint: "Evaluar", icon: GitCompareArrows },
 ];
 
 const providerNames: Record<Provider, string> = { local: "Ollama · local", external: "Gemini · externo" };
+const categories: Category[] = [
+  "riesgo_electrico",
+  "caidas_obstaculos",
+  "incendio",
+  "maquinaria",
+  "sustancias_peligrosas",
+  "problemas_estructurales",
+  "falta_epi",
+  "ergonomia",
+  "otros",
+];
+const urgencies: Urgency[] = ["baja", "media", "alta", "critica"];
+const departments: Department[] = ["prevencion", "mantenimiento", "seguridad", "limpieza"];
+const optionLabel = (value: string) => value.replaceAll("_", " ");
 
 const urgencyTone = (urgency: string) => {
   const value = urgency.toLowerCase();
@@ -66,6 +95,8 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [riskMatrix, setRiskMatrix] = useState<RiskMatrixDocument | null>(null);
+  const [riskMatrixError, setRiskMatrixError] = useState<unknown>(null);
 
   const navigate = (next: View) => {
     setView(next);
@@ -83,6 +114,10 @@ function App() {
       )
       .catch(() => undefined);
   }, [view]);
+
+  useEffect(() => {
+    void api.getRiskMatrix().then(setRiskMatrix).catch(setRiskMatrixError);
+  }, []);
 
   return (
     <div className="app-shell">
@@ -133,10 +168,11 @@ function App() {
           </div>
           <div className="human-badge"><span>HITL</span> Revisión obligatoria</div>
         </header>
-        {view === "new" && <NewNotice onCreated={() => navigate("inbox")} />}
-        {view === "inbox" && <InboxView onPendingChange={setPendingCount} />}
+        {view === "new" && <NewNotice riskMatrix={riskMatrix} onCreated={() => navigate("inbox")} />}
+        {view === "inbox" && <InboxView riskMatrix={riskMatrix} onPendingChange={setPendingCount} />}
         {view === "dashboard" && <Dashboard />}
-        {view === "compare" && <Comparison />}
+        {view === "matrix" && <MatrixView matrix={riskMatrix} error={riskMatrixError} />}
+        {view === "compare" && <Comparison riskMatrix={riskMatrix} />}
       </main>
     </div>
   );
@@ -152,7 +188,7 @@ function PageIntro({ eyebrow, title, children }: { eyebrow: string; title: strin
   );
 }
 
-function NewNotice({ onCreated }: { onCreated: () => void }) {
+function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument | null; onCreated: () => void }) {
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
   const [provider, setProvider] = useState<Provider>("local");
@@ -191,14 +227,15 @@ function NewNotice({ onCreated }: { onCreated: () => void }) {
           <label className="field">
             <span>¿Qué has observado?</span>
             <textarea
+              aria-label="¿Qué has observado?"
               value={text}
               onChange={(event) => setText(event.target.value)}
-              minLength={10}
-              maxLength={2000}
+              minLength={1}
+              maxLength={4000}
               required
               placeholder="Ej.: Cable atravesando una zona de paso junto al almacén. Dos personas han tropezado esta mañana…"
             />
-            <small>{text.length}/2000</small>
+            <small>{text.length}/4000</small>
           </label>
 
           <label className="field">
@@ -219,7 +256,7 @@ function NewNotice({ onCreated }: { onCreated: () => void }) {
           </fieldset>
 
           <StatusMessage error={error} />
-          <button className="primary-action" disabled={loading || text.trim().length < 10}>
+          <button className="primary-action" disabled={loading || text.trim().length < 1}>
             {loading ? <><LoaderCircle className="spin" /> Analizando aviso…</> : <>Generar propuesta <ArrowRight /></>}
           </button>
         </form>
@@ -244,7 +281,12 @@ function NewNotice({ onCreated }: { onCreated: () => void }) {
         <div className="result-banner" role="status">
           <div><Check /><span><strong>Propuesta creada</strong>Queda pendiente de validación humana.</span></div>
           <div className={`urgency ${urgencyTone(result.proposal.urgency)}`}>{result.proposal.urgency}</div>
-          <p><b>{result.proposal.category}</b>{result.proposal.summary}</p>
+          <div className="result-fields">
+            <p><b>Categoría</b>{optionLabel(result.proposal.category)}</p>
+            <p><b>Departamento</b>{optionLabel(result.proposal.department)}</p>
+            <p><b>Resumen</b>{result.proposal.summary}</p>
+          </div>
+          <ProposalExplanation proposal={result.proposal} riskMatrix={riskMatrix} />
           <button onClick={onCreated}>Abrir bandeja <ArrowRight size={17} /></button>
         </div>
       )}
@@ -252,7 +294,7 @@ function NewNotice({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-function InboxView({ onPendingChange }: { onPendingChange: (value: number) => void }) {
+function InboxView({ riskMatrix, onPendingChange }: { riskMatrix: RiskMatrixDocument | null; onPendingChange: (value: number) => void }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [selected, setSelected] = useState<{ notice: Notice; run: TriageRun } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -303,14 +345,14 @@ function InboxView({ onPendingChange }: { onPendingChange: (value: number) => vo
           ))}
         </div>
         <div className="review-stage">
-          {selected ? <ReviewPanel key={selected.run.triage_run_id} {...selected} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={<UserRoundCheck />} title="Selecciona una propuesta" text="Aquí podrás contrastar la observación y registrar tu decisión." />}
+          {selected ? <ReviewPanel key={selected.run.triage_run_id} {...selected} riskMatrix={riskMatrix} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={<UserRoundCheck />} title="Selecciona una propuesta" text="Aquí podrás contrastar la observación y registrar tu decisión." />}
         </div>
       </div>
     </section>
   );
 }
 
-function ReviewPanel({ notice, run, onDone }: { notice: Notice; run: TriageRun; onDone: () => void }) {
+function ReviewPanel({ notice, run, riskMatrix, onDone }: { notice: Notice; run: TriageRun; riskMatrix: RiskMatrixDocument | null; onDone: () => void }) {
   const [decision, setDecision] = useState<ReviewDecision>("approved");
   const [reviewer, setReviewer] = useState("");
   const [comment, setComment] = useState("");
@@ -346,7 +388,7 @@ function ReviewPanel({ notice, run, onDone }: { notice: Notice; run: TriageRun; 
       <h2>{run.proposal.category}</h2>
       <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</span><span>{run.proposal.department}</span></div>
       <blockquote>{run.proposal.summary}</blockquote>
-      {run.proposal.justification && <p className="justification">{run.proposal.justification}</p>}
+      <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} />
       <div className="original-notice"><span>Observación recibida</span><p>{notice.text}</p></div>
 
       <fieldset className="decision-picker">
@@ -361,9 +403,9 @@ function ReviewPanel({ notice, run, onDone }: { notice: Notice; run: TriageRun; 
 
       {decision === "modified" && (
         <div className="correction-grid">
-          <label>Categoría<input value={category} onChange={(e) => setCategory(e.target.value)} required /></label>
-          <label>Urgencia<input value={urgency} onChange={(e) => setUrgency(e.target.value)} required /></label>
-          <label>Departamento<input value={department} onChange={(e) => setDepartment(e.target.value)} required /></label>
+          <label>Categoría<select value={category} onChange={(e) => setCategory(e.target.value as Category)} required>{categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+          <label>Urgencia<select value={urgency} onChange={(e) => setUrgency(e.target.value as Urgency)} required>{urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+          <label>Departamento<select value={department} onChange={(e) => setDepartment(e.target.value as Department)} required>{departments.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
         </div>
       )}
       <div className="reviewer-grid">
@@ -436,10 +478,82 @@ function Dashboard() {
   );
 }
 
-function Comparison() {
+function ProposalExplanation({
+  proposal,
+  riskMatrix,
+  compact = false,
+}: {
+  proposal: TriageProposal;
+  riskMatrix: RiskMatrixDocument | null;
+  compact?: boolean;
+}) {
+  const rule = Array.isArray(riskMatrix?.rules)
+    ? riskMatrix.rules.find((candidate) => candidate.category === proposal.category)
+    : undefined;
+
+  return (
+    <section className={`explanation-panel ${compact ? "compact" : ""}`} aria-label="Explicación del modelo">
+      <div className="explanation-heading">
+        <Sparkles size={17} aria-hidden="true" />
+        <div><strong>Explicación del modelo</strong><small>Justificación verificable, no decisión automática</small></div>
+      </div>
+      <p>{proposal.justification || "El proveedor no incluyó una justificación textual."}</p>
+      <div className="reasoning-trace">
+        <div><span>1</span><p><strong>Acción</strong> consultar_matriz_riesgos</p></div>
+        <div><span>2</span><p><strong>Regla aplicada</strong> {rule?.rule_id ?? `categoría ${optionLabel(proposal.category)}`}</p></div>
+        <div><span>3</span><p><strong>Evidencia</strong> {rule?.evidence ?? "La matriz no estaba disponible para ampliar la evidencia."}</p></div>
+      </div>
+      <details className="json-panel">
+        <summary><Braces size={16} /> Ver JSON estructurado</summary>
+        <pre>{JSON.stringify(proposal, null, 2)}</pre>
+      </details>
+    </section>
+  );
+}
+
+function MatrixView({ matrix, error }: { matrix: RiskMatrixDocument | null; error: unknown }) {
+  const rules = Array.isArray(matrix?.rules) ? matrix.rules : [];
+  const urgencyCatalog = [...new Set(rules.map((rule) => rule.recommended_urgency))];
+  const departmentCatalog = [...new Set(rules.map((rule) => rule.department))];
+
+  return (
+    <section className="page-content">
+      <PageIntro eyebrow="04 · Referencia" title="Matriz de riesgos visible y auditable.">
+        Consulta las mismas reglas que utiliza el motor para proponer categoría, urgencia y departamento.
+      </PageIntro>
+      <StatusMessage error={error} />
+      {!matrix && !error && <Empty icon={<LoaderCircle className="spin" />} title="Cargando matriz" text="Consultando la configuración activa de la API…" />}
+      {matrix && (
+        <>
+          <div className="matrix-overview work-card">
+            <div><span>Versión activa</span><strong>{matrix.version}</strong></div>
+            <div><span>Niveles de urgencia</span><strong>{urgencyCatalog.map(optionLabel).join(" · ")}</strong></div>
+            <div><span>Departamentos</span><strong>{departmentCatalog.map(optionLabel).join(" · ")}</strong></div>
+            <p>{matrix.disclaimer}</p>
+            <p className="location-note"><MapPin size={16} /> La ubicación es contexto libre opcional; el briefing no define un catálogo cerrado de zonas.</p>
+          </div>
+          <div className="matrix-grid">
+            {rules.map((rule) => (
+              <article className="matrix-card" key={rule.rule_id}>
+                <header><small>{rule.rule_id}</small><span className={`urgency ${urgencyTone(rule.recommended_urgency)}`}>{rule.recommended_urgency}</span></header>
+                <h2>{optionLabel(rule.category)}</h2>
+                <div className="matrix-department"><UserRoundCheck size={16} /> {optionLabel(rule.department)}</div>
+                <h3>Condiciones orientativas</h3>
+                <ul>{rule.conditions.map((condition) => <li key={condition}>{condition}</li>)}</ul>
+                <p><strong>Evidencia:</strong> {rule.evidence}</p>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Comparison({ riskMatrix }: { riskMatrix: RiskMatrixDocument | null }) {
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
-  const [result, setResult] = useState<Record<string, any> | null>(null);
+  const [result, setResult] = useState<ComparisonResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
@@ -451,22 +565,26 @@ function Comparison() {
     finally { setLoading(false); }
   };
 
-  const runs = result?.runs ?? result?.results ?? (result ? [result.local, result.external].filter(Boolean) : []);
+  const runs = result?.results ?? [];
   return (
     <section className="page-content">
-      <PageIntro eyebrow="04 · Evaluación" title="Mismo caso. Dos proveedores. Una comparación justa.">Ejecuta el caso sintético con los dos motores y contrasta calidad, latencia, tokens y coste.</PageIntro>
+      <PageIntro eyebrow="05 · Evaluación" title="Mismo caso. Dos proveedores. Una comparación justa.">Ejecuta el caso sintético con los dos motores y contrasta calidad, latencia, tokens y coste.</PageIntro>
       <form className="compare-form work-card" onSubmit={submit}>
-        <label className="field"><span>Caso sintético</span><textarea value={text} onChange={(e) => setText(e.target.value)} required minLength={10} placeholder="Describe un riesgo sin datos personales…" /></label>
-        <label className="field compact"><span><MapPin size={16} /> Ubicación <em>opcional</em></span><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Zona de prueba" /></label>
-        <button className="primary-action" disabled={loading || text.trim().length < 10}>{loading ? <><LoaderCircle className="spin" /> Comparando…</> : <><GitCompareArrows /> Ejecutar ambos motores</>}</button>
+        <label className="field"><span>Caso sintético</span><textarea aria-label="Caso sintético" value={text} onChange={(e) => setText(e.target.value)} required minLength={1} maxLength={4000} placeholder="Describe un riesgo sin datos personales…" /></label>
+        <label className="field compact"><span><MapPin size={16} /> Ubicación <em>opcional</em></span><input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={200} placeholder="Zona de prueba" /></label>
+        <button className="primary-action" disabled={loading || text.trim().length < 1}>{loading ? <><LoaderCircle className="spin" /> Comparando…</> : <><GitCompareArrows /> Ejecutar ambos motores</>}</button>
       </form>
       <StatusMessage error={error} />
       {result && (
         <div className="comparison-grid">
-          {(Array.isArray(runs) ? runs : []).map((raw: Record<string, any>, index: number) => {
+          {runs.map((raw, index) => {
+            if (!raw.result) {
+              return <article className="comparison-card" key={raw.provider}><header><span>{index === 0 ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{raw.provider}</h2></div></header><div className="message error" role="alert"><AlertTriangle /><div><strong>No se obtuvo una propuesta válida.</strong><small>Código: {raw.error_code ?? "provider_error"}</small></div></div></article>;
+            }
             const run = normalizeTriageResponse(raw);
-            const metrics = raw.metrics ?? raw;
-            return <article className="comparison-card" key={run.triage_run_id || index}><header><span>{index === 0 ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{run.provider || (index === 0 ? "local" : "external")}</h2></div></header><div className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</div><h3>{run.proposal.category}</h3><p>{run.proposal.summary}</p><dl><div><dt>Latencia</dt><dd>{metrics.latency_ms ?? metrics.duration_ms ?? "—"} ms</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? metrics.tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{metrics.estimated_cost ?? metrics.cost ?? "—"}</dd></div></dl></article>;
+            const metrics = raw.metrics;
+            const cost = metrics.api_cost === null ? "—" : `${metrics.api_cost}${metrics.api_cost_currency ? ` ${metrics.api_cost_currency}` : ""}`;
+            return <article className="comparison-card" key={raw.provider}><header><span>{index === 0 ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{run.provider}</h2></div></header><div className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</div><h3>{optionLabel(run.proposal.category)}</h3><p>{run.proposal.summary}</p><p className="comparison-department"><strong>Departamento:</strong> {optionLabel(run.proposal.department)}</p><ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} compact /><dl><div><dt>Latencia</dt><dd>{metrics.latency_ms} ms</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{cost}</dd></div></dl></article>;
           })}
         </div>
       )}

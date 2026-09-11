@@ -38,7 +38,10 @@ class TriageResult(StrictContract):
     def require_ten_words(cls, value: str) -> str:
         words = value.split()
         if len(words) != 10:
-            raise ValueError("El resumen debe contener exactamente 10 palabras.")
+            raise ValueError(
+                "El resumen debe contener exactamente 10 palabras; "
+                f"se recibieron {len(words)}."
+            )
         if any(not any(char.isalnum() for char in word) for word in words):
             raise ValueError("Cada palabra debe contener al menos una letra o un número.")
         return " ".join(words)

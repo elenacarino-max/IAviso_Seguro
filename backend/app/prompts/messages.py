@@ -20,6 +20,10 @@ from .tool_context import RISK_MATRIX_TOOL, TOOL_SELECTION_PROMPT
 if TYPE_CHECKING:
     from backend.app.providers.base import RepairContext, ToolCall
 
+_TEN_WORD_SUMMARY_FALLBACK = (
+    "Aviso requiere evaluación técnica y revisión profesional antes de actuar."
+)
+
 
 def _serialize_output(value: str | bytes | Mapping[str, object]) -> str:
     if isinstance(value, bytes):
@@ -44,6 +48,27 @@ def _notice_message(request: TriageRequest) -> dict[str, str]:
     }
 
 
+def _repair_instructions(repair: RepairContext) -> str:
+    instructions = (
+        "REPARACIÓN: corrige únicamente estos errores de contrato: "
+        + json.dumps(repair.validation_errors, ensure_ascii=False)
+        + "\nSALIDA RECHAZADA:\n"
+        + _serialize_output(repair.invalid_output)
+    )
+    if any(
+        error.startswith("summary:value_error")
+        and "exactamente 10 palabras" in error
+        for error in repair.validation_errors
+    ):
+        instructions += (
+            "\nPara corregir el recuento, no inventes otro resumen: establece "
+            'summary exactamente como "'
+            + _TEN_WORD_SUMMARY_FALLBACK
+            + '" Son 10 palabras.'
+        )
+    return instructions
+
+
 def build_ollama_messages(
     request: TriageRequest,
     *,
@@ -59,6 +84,17 @@ def build_ollama_messages(
     ]
     if observation is None:
         messages.append({"role": "user", "content": TOOL_SELECTION_PROMPT})
+        if repair is not None:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        _repair_instructions(repair)
+                        + "\nEmite únicamente una llamada a consultar_matriz_riesgos "
+                        "con una categoría exacta del esquema."
+                    ),
+                }
+            )
         return messages
 
     arguments = observation.arguments.model_dump()
@@ -96,12 +132,7 @@ def build_ollama_messages(
         messages.append(
             {
                 "role": "user",
-                "content": (
-                    "REPARACIÓN: corrige únicamente estos errores de contrato: "
-                    + json.dumps(repair.validation_errors, ensure_ascii=False)
-                    + "\nSALIDA RECHAZADA:\n"
-                    + _serialize_output(repair.invalid_output)
-                ),
+                "content": _repair_instructions(repair),
             }
         )
     return messages
@@ -137,6 +168,16 @@ def build_gemini_request(
     }
 
     if observation is None:
+        if repair is not None:
+            initial_parts.append(
+                {
+                    "text": (
+                        _repair_instructions(repair)
+                        + "\nEmite únicamente una llamada a consultar_matriz_riesgos "
+                        "con una categoría exacta del esquema."
+                    )
+                }
+            )
         function = RISK_MATRIX_TOOL["function"]
         body["tools"] = [
             {
@@ -161,12 +202,7 @@ def build_gemini_request(
         raise ValueError("Falta el contexto original de la llamada de herramienta.")
     instructions = OUTPUT_FORMAT_PROMPT
     if repair is not None:
-        instructions += (
-            "\n\nREPARACIÓN: corrige únicamente estos errores de contrato: "
-            + json.dumps(repair.validation_errors, ensure_ascii=False)
-            + "\nSALIDA RECHAZADA:\n"
-            + _serialize_output(repair.invalid_output)
-        )
+        instructions += "\n\n" + _repair_instructions(repair)
 
     function_response: dict[str, object] = {
         "name": observation.tool_name,

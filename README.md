@@ -8,10 +8,10 @@ Fase 9 completada: el MVP ofrece un recorrido reproducible desde una SPA React
 hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
-La API permite comparar ambos proveedores con una misma entrada sin crear dos
+La API permite consultar la matriz activa y comparar ambos proveedores con una misma entrada sin crear dos
 avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
 mantienen una revisión humana versionada. La interfaz React permite crear,
-consultar, revisar y comparar usando exclusivamente la API; Streamlit se conserva
+consultar, revisar, explicar y comparar usando exclusivamente la API; Streamlit se conserva
 como respaldo académico. La resolución
 operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
 
@@ -75,7 +75,9 @@ ollama pull llama3.2:3b
 ollama serve
 ```
 
-Las dependencias actuales se han instalado y probado conjuntamente en el entorno local; todavía falta fijar sus versiones resueltas para una entrega reproducible. Para ejecutar todas las pruebas desde la raíz:
+Las dependencias están fijadas en `requirements-lock.txt` y se han instalado y
+probado conjuntamente en un entorno limpio. Para ejecutar todas las pruebas desde
+la raíz:
 
 ```powershell
 python -m pytest -q
@@ -110,6 +112,7 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/risk-matrix
 $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/notices
 $review = @{decision='approved'; reviewer='Tecnica demo'; comment='Caso sintetico revisado.'; expected_version=$proposal.version} | ConvertTo-Json
@@ -155,6 +158,11 @@ aviso nunca se redirige implícitamente a otro proveedor.
 
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
+La SPA consulta esa misma versión mediante `GET /api/v1/risk-matrix` y muestra
+sus reglas, niveles de urgencia, departamentos y evidencia. La ubicación se
+mantiene como contexto libre opcional porque no existe un catálogo canónico de
+zonas en el alcance acordado.
+
 El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. Los prompts separan sistema, ejemplos sintéticos, aviso, contexto de herramienta y formato. Indican que se ignoren atributos demográficos irrelevantes. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
 
 Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor,
@@ -182,7 +190,11 @@ las nueve categorías, ambigüedad, información insuficiente y variantes
 demográficas. Sus resultados son académicos, no una referencia profesional.
 
 La SPA React ofrece alta de avisos, bandeja de propuestas pendientes, revisión
-aprobada/modificada/rechazada, panel general y comparación entre proveedores.
+aprobada/modificada/rechazada, matriz de referencia, panel general y comparación
+entre proveedores. Cada propuesta muestra la justificación generada, una traza
+auditable de acción, regla y evidencia, además del JSON estructurado. Esta vista
+explica el resultado verificable del modelo; no almacena ni expone razonamiento
+interno privado.
 La urgencia se presenta siempre con texto explícito además del color. Los
 errores de API se convierten en mensajes seguros y todas las pantallas mantienen
 visible el recordatorio de revisión profesional y protocolo de emergencia.

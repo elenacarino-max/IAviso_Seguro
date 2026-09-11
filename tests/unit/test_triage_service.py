@@ -134,6 +134,7 @@ def test_repair_feedback_explains_ten_word_constraint(triage_request):
         "exactamente 10 palabras" in error
         for error in provider.repairs[2].validation_errors
     )
+    assert any("se recibieron 3" in error for error in provider.repairs[2].validation_errors)
 
 
 def test_exhaustion_raises_stable_service_error(triage_request):
