@@ -96,7 +96,7 @@ def run_main_demo() -> dict[str, Any]:
     return {
         "scenario": "main",
         "created_status": created["status"],
-        "listed_notices": len(listed),
+        "listed_notices": len(listed["items"]),
         "reviewed_status": reviewed["triage_run"]["status"],
         "proposal_preserved": (
             reviewed["triage_run"]["proposal"]["category"] == created["category"]

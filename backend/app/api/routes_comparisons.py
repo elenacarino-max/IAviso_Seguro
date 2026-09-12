@@ -1,6 +1,7 @@
 """Comparación trazable de ambos proveedores con una única entrada."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 
@@ -8,6 +9,8 @@ from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import (
     ComparisonProviderResult,
     ComparisonRequest,
+    ComparisonReviewRecord,
+    ComparisonReviewRequest,
     ComparisonResponse,
     TriageRequest,
 )
@@ -56,3 +59,24 @@ def create_comparison(
             )
         )
     return repository.create_comparison(payload, tuple(results))
+
+
+@router.post(
+    "/comparisons/{comparison_id}/review",
+    response_model=ComparisonReviewRecord,
+    responses={
+        404: {"description": "Comparación no encontrada"},
+        409: {"description": "La comparación ya fue revisada"},
+    },
+)
+def review_comparison(
+    comparison_id: UUID,
+    payload: ComparisonReviewRequest,
+    repository: Annotated[
+        SQLiteNoticeRepository,
+        Depends(get_notice_repository),
+    ],
+) -> ComparisonReviewRecord:
+    """Guarda una única clasificación humana de referencia."""
+
+    return repository.review_comparison(comparison_id, payload)

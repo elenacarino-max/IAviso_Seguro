@@ -1,0 +1,16 @@
+services:
+  iaviso-seguro:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_PATH: /app/data/local/iaviso.db
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LOCAL_MODEL: ${LOCAL_MODEL:-llama3.2:3b}
+      EXTERNAL_API_KEY: ${EXTERNAL_API_KEY:-}
+    volumes:
+      - ./data/local:/app/data/local
+    restart: unless-stopped

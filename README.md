@@ -4,16 +4,29 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 9 completada: el MVP ofrece un recorrido reproducible desde una SPA React
+Fase 10 completada: el MVP ofrece un recorrido reproducible desde una SPA React
 hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
-La API permite consultar la matriz activa y comparar ambos proveedores con una misma entrada sin crear dos
-avisos finales. Las propuestas se guardan en SQLite como `pending_review` y
+La API permite consultar la matriz activa, comparar ambos proveedores con una misma entrada sin crear dos
+avisos finales, guardar una única decisión humana sobre esa comparación y consultar
+un resumen histórico de evaluación por proveedor. Las propuestas se guardan en SQLite como `pending_review` y
 mantienen una revisión humana versionada. La interfaz React permite crear,
-consultar, revisar, explicar y comparar usando exclusivamente la API; Streamlit se conserva
+consultar, revisar, explicar y comparar usando exclusivamente la API. La bandeja
+ofrece búsqueda, filtros tipados y paginación en servidor; cada aviso incorpora
+una línea temporal auditable con la propuesta, la transición de estado, el actor
+y cualquier corrección humana. También ejecuta un benchmark
+etiquetado de 14 casos con exactitud por campo, validez JSON, latencia media y coste medio. El panel histórico
+muestra aceptación, corrección, latencia, reparaciones, acuerdo humano, tokens, coste, intentos y parámetros;
+Streamlit se conserva
 como respaldo académico. La resolución
 operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
+
+Los valores cerrados de categoría, urgencia y departamento se publican mediante
+`GET /api/v1/catalogs` y alimentan directamente los desplegables de revisión.
+El cliente React refleja los contratos Pydantic con uniones TypeScript y tipos
+específicos para propuestas, avisos, revisiones, comparaciones y métricas; no
+normaliza alias ni sustituye silenciosamente valores desconocidos.
 
 ## Objetivo
 
@@ -102,6 +115,21 @@ La interfaz abre en `http://127.0.0.1:5173` y Vite redirige `/api` a
 `http://127.0.0.1:8000`. Para validar el frontend: `npm test` y
 `npm run build`.
 
+### Despliegue reproducible con Docker
+
+El contenedor construye React y lo sirve desde la misma aplicación FastAPI. Con
+Ollama iniciado en el equipo y un modelo preparado:
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+El dashboard completo queda disponible en `http://127.0.0.1:8000`. Dentro del
+contenedor, Ollama se consulta mediante `host.docker.internal`; para habilitar
+Gemini debe definirse `EXTERNAL_API_KEY` en `.env`. La base SQLite se conserva
+en `data/local/`. Para detener el despliegue: `docker compose down`.
+
 El dashboard Streamlit se conserva como fallback y puede arrancarse desde la raíz:
 
 ```powershell
@@ -112,12 +140,18 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/catalogs
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/risk-matrix
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/metrics/summary
 $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
-Invoke-RestMethod http://127.0.0.1:8000/api/v1/notices
+Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/notices?status=pending_review&urgency=alta&provider=local&page=1&limit=20'
+Invoke-RestMethod "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/audit-events"
 $review = @{decision='approved'; reviewer='Tecnica demo'; comment='Caso sintetico revisado.'; expected_version=$proposal.version} | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/reviews" -ContentType 'application/json' -Body $review
 $comparison = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/comparisons -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","location":"Zona demo"}'
+$comparisonReview = @{category='incendio'; urgency='critica'; department='seguridad'; reviewer='Tecnica demo'; comment='Referencia humana verificada.'} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/v1/comparisons/$($comparison.comparison_id)/review" -ContentType 'application/json' -Body $comparisonReview
+$evaluation = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/evaluations
 # Requiere EXTERNAL_API_KEY en .env:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay humo junto a una salida.","provider":"external"}'
 ```
@@ -189,9 +223,31 @@ tarifa no corresponde exactamente al modelo usado. El conjunto
 las nueve categorías, ambigüedad, información insuficiente y variantes
 demográficas. Sus resultados son académicos, no una referencia profesional.
 
-La SPA React ofrece alta de avisos, bandeja de propuestas pendientes, revisión
-aprobada/modificada/rechazada, matriz de referencia, panel general y comparación
-entre proveedores. Cada propuesta muestra la justificación generada, una traza
+`GET /api/v1/metrics/summary` agrega las ejecuciones persistidas de avisos y
+comparaciones. Para cada proveedor devuelve modelos y parámetros observados, latencia,
+intentos, reparaciones, éxito, validez JSON, tokens, coste y acuerdo con la
+revisión humana. Este último indicador es la proporción de propuestas aprobadas
+sin cambios entre las revisadas; en una comparación exige coincidencia en los
+tres campos con su referencia humana. Una corrección, rechazo, discrepancia o
+ejecución fallida cuentan como desacuerdo cuando existe referencia. Los campos
+sin observaciones permanecen en `null`; la validez JSON, los tokens y el coste
+se acompañan de su número de observaciones.
+
+La SPA React ofrece alta de avisos, bandeja profesional, revisión
+aprobada/modificada/rechazada, matriz de referencia, panel de evaluación y comparación
+entre proveedores. La bandeja consulta al servidor con búsqueda y filtros de estado,
+urgencia, categoría y motor, y pagina los resultados. El detalle muestra una línea
+temporal que combina la recepción y propuesta con los eventos persistidos de auditoría;
+los avisos ya revisados pueden reabrirse en modo lectura para consultar responsable,
+transición y cambios de clasificación. El panel consume el resumen histórico del backend y permite
+contrastar rendimiento, robustez, coste y acuerdo humano de Ollama y Gemini. La
+comparación de un caso destaca coincidencias por campo, el modelo más rápido,
+las reparaciones y el coste; después permite registrar una única clasificación
+humana y muestra cuántos campos acertó cada proveedor. La vista comparativa también
+permite ejecutar bajo demanda el dataset
+sintético completo: cada proveedor procesa los mismos 14 casos y se muestran la
+exactitud de categoría, urgencia y departamento, la tasa de JSON válido, la
+latencia media y el coste medio. Cada propuesta muestra la justificación generada, una traza
 auditable de acción, regla y evidencia, además del JSON estructurado. Esta vista
 explica el resultado verificable del modelo; no almacena ni expone razonamiento
 interno privado.

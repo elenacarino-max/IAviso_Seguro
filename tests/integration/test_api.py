@@ -32,6 +32,32 @@ def test_health_reports_service_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_catalogs_endpoint_exposes_the_exact_closed_domain():
+    response = client.get("/api/v1/catalogs")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "categories": [
+            "riesgo_electrico",
+            "caidas_obstaculos",
+            "incendio",
+            "maquinaria",
+            "sustancias_peligrosas",
+            "problemas_estructurales",
+            "falta_epi",
+            "ergonomia",
+            "otros",
+        ],
+        "urgencies": ["baja", "media", "alta", "critica"],
+        "departments": [
+            "prevencion",
+            "mantenimiento",
+            "seguridad",
+            "limpieza",
+        ],
+    }
+
+
 def test_risk_matrix_endpoint_exposes_the_validated_catalog():
     response = client.get("/api/v1/risk-matrix")
 
@@ -124,6 +150,132 @@ def test_comparison_uses_same_input_without_creating_notices(
     assert repository.list_notices() == ()
 
 
+def test_evaluation_exposes_quality_latency_and_cost_without_creating_notices(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+
+    response = client.post("/api/v1/evaluations")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["dataset_version"] == "1.0.0"
+    assert [item["provider"] for item in body["summaries"]] == [
+        "local",
+        "external",
+    ]
+    assert all(item["cases"] == 14 for item in body["summaries"])
+    assert all(item["category_accuracy"] is not None for item in body["summaries"])
+    assert all(item["urgency_accuracy"] is not None for item in body["summaries"])
+    assert all(item["department_accuracy"] is not None for item in body["summaries"])
+    assert all(item["mean_latency_ms"] is not None for item in body["summaries"])
+    assert body["summaries"][0]["mean_api_cost"] == "0"
+    assert repository.list_notices() == ()
+
+
+def test_metrics_summary_compares_providers_against_human_reviews():
+    local = client.post(
+        "/api/v1/triage",
+        json={"text": "Caso sintético local", "provider": "local"},
+    ).json()
+    external = client.post(
+        "/api/v1/triage",
+        json={"text": "Caso sintético externo", "provider": "external"},
+    ).json()
+    client.post(
+        f"/api/v1/notices/{local['notice_id']}/reviews",
+        json={
+            "decision": "approved",
+            "reviewer": "Técnica demo",
+            "comment": "La propuesta coincide.",
+            "expected_version": 0,
+        },
+    )
+    client.post(
+        f"/api/v1/notices/{external['notice_id']}/reviews",
+        json={
+            "decision": "modified",
+            "reviewer": "Técnica demo",
+            "comment": "Se corrige la urgencia.",
+            "expected_version": 0,
+            "urgency": "alta",
+        },
+    )
+
+    response = client.get("/api/v1/metrics/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_notices"] == 2
+    assert body["reviewed"] == 2
+    assert body["acceptance_rate"] == 0.5
+    assert body["correction_rate"] == 0.5
+    by_provider = {item["provider"]: item for item in body["providers"]}
+    assert by_provider["local"]["human_agreement_rate"] == 1
+    assert by_provider["external"]["human_agreement_rate"] == 0
+    assert by_provider["local"]["mean_latency_ms"] is not None
+    assert by_provider["local"]["repair_rate"] == 0
+
+
+def test_comparison_accepts_one_human_reference(use_mock_provider_for_contract_tests):
+    repository = use_mock_provider_for_contract_tests
+    comparison = client.post(
+        "/api/v1/comparisons",
+        json={"text": "Caso sintético común"},
+    ).json()
+    payload = {
+        "category": "otros",
+        "urgency": "media",
+        "department": "prevencion",
+        "reviewer": "Técnica demo",
+        "comment": "Referencia humana para comparar ambos modelos.",
+    }
+
+    response = client.post(
+        f"/api/v1/comparisons/{comparison['comparison_id']}/review",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["category"] == "otros"
+    assert response.json()["comparison_id"] == comparison["comparison_id"]
+    duplicate = client.post(
+        f"/api/v1/comparisons/{comparison['comparison_id']}/review",
+        json=payload,
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "comparison_review_conflict"
+    assert repository.list_notices() == ()
+
+
+def test_metrics_summary_includes_reviewed_comparison_executions():
+    comparison = client.post(
+        "/api/v1/comparisons",
+        json={"text": "Caso sintético común"},
+    ).json()
+    client.post(
+        f"/api/v1/comparisons/{comparison['comparison_id']}/review",
+        json={
+            "category": "otros",
+            "urgency": "media",
+            "department": "prevencion",
+            "reviewer": "Técnica demo",
+            "comment": "La clasificación coincide con ambos modelos.",
+        },
+    )
+
+    response = client.get("/api/v1/metrics/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_notices"] == 0
+    assert body["total_runs"] == 2
+    assert all(item["runs"] == 1 for item in body["providers"])
+    assert all(item["reviewed_runs"] == 1 for item in body["providers"])
+    assert all(item["human_agreement_rate"] == 1 for item in body["providers"])
+    assert all(item["success_rate"] == 1 for item in body["providers"])
+
+
 def test_notice_can_be_listed_and_modified_once():
     created = client.post(
         "/api/v1/triage",
@@ -137,7 +289,11 @@ def test_notice_can_be_listed_and_modified_once():
     listed = client.get("/api/v1/notices")
 
     assert listed.status_code == 200
-    notice = listed.json()[0]
+    page = listed.json()
+    assert page["total"] == 1
+    assert page["page"] == 1
+    assert page["pages"] == 1
+    notice = page["items"][0]
     assert notice["id"] == created["notice_id"]
     assert notice["text"] == "Hay agua derramada en el pasillo."
     assert notice["triage_runs"][0]["status"] == "pending_review"
@@ -178,6 +334,86 @@ def test_notice_can_be_listed_and_modified_once():
     assert duplicate.status_code == 409
     assert duplicate.json()["error"]["code"] == "review_conflict"
     assert duplicate.json()["request_id"] == duplicate.headers["X-Request-ID"]
+
+
+def test_notices_support_typed_filters_search_and_pagination():
+    first = client.post(
+        "/api/v1/triage",
+        json={"text": "Caso alfa junto al cuadro", "provider": "local"},
+    ).json()
+    client.post(
+        f"/api/v1/notices/{first['notice_id']}/reviews",
+        json={
+            "decision": "modified",
+            "reviewer": "Técnica PRL",
+            "comment": "Clasificación final comprobada.",
+            "expected_version": 0,
+            "category": "incendio",
+            "urgency": "critica",
+            "department": "seguridad",
+        },
+    )
+    client.post(
+        "/api/v1/triage",
+        json={"text": "Caso beta en almacén", "provider": "external"},
+    )
+
+    filtered = client.get(
+        "/api/v1/notices",
+        params={
+            "search": "alfa",
+            "status": "modified",
+            "urgency": "critica",
+            "category": "incendio",
+            "provider": "local",
+            "page": 1,
+            "limit": 1,
+        },
+    )
+
+    assert filtered.status_code == 200
+    body = filtered.json()
+    assert body["total"] == 1
+    assert body["items"][0]["id"] == first["notice_id"]
+    assert body["items"][0]["triage_runs"][0]["status"] == "modified"
+    paged = client.get("/api/v1/notices", params={"page": 1, "limit": 1})
+    assert paged.json()["total"] == 2
+    assert paged.json()["pages"] == 2
+    assert len(paged.json()["items"]) == 1
+    assert client.get("/api/v1/notices", params={"status": "otro"}).status_code == 422
+    assert client.get("/api/v1/notices", params={"limit": 101}).status_code == 422
+
+
+def test_notice_audit_events_are_exposed_in_order():
+    created = client.post(
+        "/api/v1/triage",
+        json={"text": "Caso trazable", "provider": "local"},
+    ).json()
+    client.post(
+        f"/api/v1/notices/{created['notice_id']}/reviews",
+        json={
+            "decision": "approved",
+            "reviewer": "Técnica PRL",
+            "comment": "Propuesta verificada.",
+            "expected_version": 0,
+        },
+    )
+
+    response = client.get(
+        f"/api/v1/notices/{created['notice_id']}/audit-events"
+    )
+
+    assert response.status_code == 200
+    assert [item["event_type"] for item in response.json()] == [
+        "triage_created",
+        "review_completed",
+    ]
+    assert response.json()[1]["actor"] == "Técnica PRL"
+    missing = client.get(
+        "/api/v1/notices/00000000-0000-0000-0000-000000000001/audit-events"
+    )
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "notice_not_found"
 
 
 def test_review_of_missing_notice_is_controlled():

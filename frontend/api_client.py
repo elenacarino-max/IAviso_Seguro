@@ -57,12 +57,26 @@ class IAvisoApiClient:
         )
 
     def list_notices(self) -> list[dict[str, Any]]:
-        value = self._request("GET", "api/v1/notices")
-        if not isinstance(value, list) or not all(
-            isinstance(item, Mapping) for item in value
-        ):
-            raise ApiClientError("La API devolvió una lista de avisos inválida.")
-        return [dict(item) for item in value]
+        notices: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            value = self._mapping(
+                self._request(
+                    "GET",
+                    "api/v1/notices",
+                    params={"page": page, "limit": 100},
+                )
+            )
+            items = value.get("items")
+            pages = value.get("pages")
+            if not isinstance(items, list) or not all(
+                isinstance(item, Mapping) for item in items
+            ) or not isinstance(pages, int):
+                raise ApiClientError("La API devolvió una página de avisos inválida.")
+            notices.extend(dict(item) for item in items)
+            if page >= pages:
+                return notices
+            page += 1
 
     def review_notice(
         self,

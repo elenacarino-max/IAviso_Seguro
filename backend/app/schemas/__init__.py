@@ -1,17 +1,22 @@
 """Contratos públicos de triaje."""
 
+from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
 from .errors import ErrorCode, ErrorDetail, ErrorResponse
 from .health import HealthResponse
 from .metrics import (
     ComparisonProviderResult,
     ComparisonRequest,
+    ComparisonReviewRecord,
+    ComparisonReviewRequest,
     ComparisonResponse,
     EvaluationCase,
     EvaluationDataset,
     EvaluationObservation,
     EvaluationReport,
     ExecutionMetrics,
+    MetricsSummary,
     PricingReference,
+    ProviderMetricsSummary,
     ProviderEvaluationSummary,
 )
 from .risk_matrix import (
@@ -25,6 +30,7 @@ from .workflow import (
     AuditEventRecord,
     ClassificationDecision,
     NoticeRecord,
+    NoticePage,
     ProposalStatus,
     ReviewDecision,
     ReviewRecord,
@@ -36,13 +42,18 @@ from .workflow import (
 
 __all__ = [
     "AuditEventRecord",
+    "CatalogsResponse",
+    "Category",
     "ClassificationDecision",
     "ComparisonProviderResult",
     "ComparisonRequest",
+    "ComparisonReviewRecord",
+    "ComparisonReviewRequest",
     "ComparisonResponse",
     "ErrorDetail",
     "ErrorCode",
     "ErrorResponse",
+    "Department",
     "EvaluationCase",
     "EvaluationDataset",
     "EvaluationObservation",
@@ -50,8 +61,12 @@ __all__ = [
     "ExecutionMetrics",
     "HealthResponse",
     "NoticeRecord",
+    "NoticePage",
+    "MetricsSummary",
     "ProposalStatus",
     "PricingReference",
+    "Provider",
+    "ProviderMetricsSummary",
     "ProviderEvaluationSummary",
     "ReviewDecision",
     "ReviewRecord",
@@ -65,4 +80,5 @@ __all__ = [
     "TriageRequest",
     "TriageResult",
     "TriageRunRecord",
+    "Urgency",
 ]

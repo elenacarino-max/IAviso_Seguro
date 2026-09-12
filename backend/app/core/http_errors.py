@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 
 from backend.app.providers import ProviderConnectionError, ProviderRateLimitError
 from backend.app.repositories import (
+    ComparisonNotFoundError,
+    ComparisonReviewConflictError,
     NoticeNotFoundError,
     PersistenceError,
     ReviewConflictError,
@@ -41,6 +43,30 @@ def _error_response(
 
 def register_exception_handlers(application: FastAPI) -> None:
     """Registra solo fallos previstos; los detalles internos no salen por HTTP."""
+
+    @application.exception_handler(ComparisonNotFoundError)
+    async def comparison_not_found_handler(
+        request: Request,
+        exc: ComparisonNotFoundError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=404,
+            code="comparison_not_found",
+            message="La comparación solicitada no existe.",
+        )
+
+    @application.exception_handler(ComparisonReviewConflictError)
+    async def comparison_review_conflict_handler(
+        request: Request,
+        exc: ComparisonReviewConflictError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=409,
+            code="comparison_review_conflict",
+            message="La comparación ya tiene una referencia humana.",
+        )
 
     @application.exception_handler(NoticeNotFoundError)
     async def notice_not_found_handler(

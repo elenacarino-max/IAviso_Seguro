@@ -9,6 +9,8 @@ from uuid import uuid4
 import pytest
 
 from backend.app.repositories import (
+    ComparisonNotFoundError,
+    ComparisonReviewConflictError,
     NoticeNotFoundError,
     ReviewConflictError,
     SQLiteNoticeRepository,
@@ -16,6 +18,7 @@ from backend.app.repositories import (
 from backend.app.schemas import (
     ComparisonProviderResult,
     ComparisonRequest,
+    ComparisonReviewRequest,
     ExecutionMetrics,
     ReviewRequest,
     TriageRequest,
@@ -236,6 +239,38 @@ def test_comparison_is_persisted_without_creating_notice(tmp_path):
         assert (
             connection.execute("SELECT COUNT(*) FROM comparison_runs").fetchone()[0]
             == 2
+        )
+
+    review = ComparisonReviewRequest(
+        category="riesgo_electrico",
+        urgency="alta",
+        department="mantenimiento",
+        reviewer="Técnica de prevención",
+        comment="Referencia humana sintética.",
+    )
+    stored = repository.review_comparison(response.comparison_id, review)
+    assert stored.comparison_id == response.comparison_id
+    assert stored.category == "riesgo_electrico"
+    recovered = repository.list_comparisons()
+    assert len(recovered) == 1
+    assert recovered[0].comparison_id == response.comparison_id
+    assert recovered[0].review == stored
+    assert [item.provider for item in recovered[0].results] == ["local", "external"]
+    with pytest.raises(ComparisonReviewConflictError):
+        repository.review_comparison(response.comparison_id, review)
+
+
+def test_missing_comparison_review_is_controlled(repository):
+    with pytest.raises(ComparisonNotFoundError):
+        repository.review_comparison(
+            uuid4(),
+            ComparisonReviewRequest(
+                category="otros",
+                urgency="media",
+                department="prevencion",
+                reviewer="Técnica de prevención",
+                comment="Referencia humana sintética.",
+            ),
         )
 
 

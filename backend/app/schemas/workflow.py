@@ -100,6 +100,16 @@ class NoticeRecord(WorkflowContract):
     triage_runs: tuple[TriageRunRecord, ...]
 
 
+class NoticePage(WorkflowContract):
+    """Página de avisos filtrados en el servidor."""
+
+    items: tuple[NoticeRecord, ...]
+    page: int = Field(strict=True, ge=1)
+    limit: int = Field(strict=True, ge=1, le=100)
+    total: int = Field(strict=True, ge=0)
+    pages: int = Field(strict=True, ge=0)
+
+
 class ReviewResponse(WorkflowContract):
     notice_id: UUID
     triage_run: TriageRunRecord

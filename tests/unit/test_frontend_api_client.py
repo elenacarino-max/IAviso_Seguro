@@ -17,7 +17,16 @@ def test_client_completes_create_list_review_and_compare_flow():
         if request.url.path.endswith("/triage"):
             return httpx.Response(200, json={"notice_id": "notice-1"})
         if request.method == "GET":
-            return httpx.Response(200, json=[{"id": "notice-1", "triage_runs": []}])
+            return httpx.Response(
+                200,
+                json={
+                    "items": [{"id": "notice-1", "triage_runs": []}],
+                    "page": 1,
+                    "limit": 100,
+                    "total": 1,
+                    "pages": 1,
+                },
+            )
         if request.url.path.endswith("/reviews"):
             return httpx.Response(200, json={"notice_id": "notice-1"})
         return httpx.Response(

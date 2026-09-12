@@ -12,12 +12,18 @@ from uuid import UUID, uuid4
 
 from backend.app.schemas import (
     AuditEventRecord,
+    Category,
     ClassificationDecision,
     ComparisonProviderResult,
     ComparisonRequest,
+    ComparisonReviewRecord,
+    ComparisonReviewRequest,
     ComparisonResponse,
     ExecutionMetrics,
+    NoticePage,
     NoticeRecord,
+    ProposalStatus,
+    Provider,
     ReviewRecord,
     ReviewRequest,
     ReviewResponse,
@@ -25,9 +31,16 @@ from backend.app.schemas import (
     TriageRequest,
     TriageResult,
     TriageRunRecord,
+    Urgency,
 )
 
-from .errors import NoticeNotFoundError, PersistenceError, ReviewConflictError
+from .errors import (
+    ComparisonNotFoundError,
+    ComparisonReviewConflictError,
+    NoticeNotFoundError,
+    PersistenceError,
+    ReviewConflictError,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS notices (
@@ -67,6 +80,24 @@ CREATE TABLE IF NOT EXISTS comparison_runs (
     result_json TEXT,
     metrics_json TEXT NOT NULL,
     error_code TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS comparison_reviews (
+    id TEXT PRIMARY KEY,
+    comparison_id TEXT NOT NULL UNIQUE
+        REFERENCES comparisons(id) ON DELETE RESTRICT,
+    category TEXT NOT NULL CHECK (category IN (
+        'riesgo_electrico', 'caidas_obstaculos', 'incendio', 'maquinaria',
+        'sustancias_peligrosas', 'problemas_estructurales', 'falta_epi',
+        'ergonomia', 'otros'
+    )),
+    urgency TEXT NOT NULL CHECK (urgency IN ('baja', 'media', 'alta', 'critica')),
+    department TEXT NOT NULL CHECK (
+        department IN ('prevencion', 'mantenimiento', 'seguridad', 'limpieza')
+    ),
+    reviewer TEXT NOT NULL,
+    comment TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 
@@ -285,6 +316,162 @@ class SQLiteNoticeRepository:
             connection.close()
         return response
 
+    def review_comparison(
+        self,
+        comparison_id: UUID,
+        review: ComparisonReviewRequest,
+    ) -> ComparisonReviewRecord:
+        review_id = uuid4()
+        created_at = self._utc_now()
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            exists = connection.execute(
+                "SELECT 1 FROM comparisons WHERE id = ?",
+                (str(comparison_id),),
+            ).fetchone()
+            if exists is None:
+                raise ComparisonNotFoundError("La comparación solicitada no existe.")
+            connection.execute(
+                """
+                INSERT INTO comparison_reviews (
+                    id, comparison_id, category, urgency, department,
+                    reviewer, comment, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(review_id),
+                    str(comparison_id),
+                    review.category,
+                    review.urgency,
+                    review.department,
+                    review.reviewer,
+                    review.comment,
+                    created_at.isoformat(),
+                ),
+            )
+            connection.commit()
+        except ComparisonNotFoundError:
+            connection.rollback()
+            raise
+        except sqlite3.IntegrityError as exc:
+            connection.rollback()
+            raise ComparisonReviewConflictError(
+                "La comparación ya tiene una referencia humana."
+            ) from exc
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise PersistenceError(
+                "No se pudo guardar la revisión comparativa."
+            ) from exc
+        finally:
+            connection.close()
+        return ComparisonReviewRecord(
+            **review.model_dump(),
+            id=review_id,
+            comparison_id=comparison_id,
+            created_at=created_at,
+        )
+
+    def list_comparisons(self) -> tuple[ComparisonResponse, ...]:
+        """Recupera comparaciones y su referencia humana para evaluación."""
+
+        try:
+            with closing(self._connect()) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT
+                        c.id AS comparison_id,
+                        c.created_at AS comparison_created_at,
+                        run.provider,
+                        run.result_json,
+                        run.metrics_json,
+                        run.error_code,
+                        review.id AS review_id,
+                        review.category AS review_category,
+                        review.urgency AS review_urgency,
+                        review.department AS review_department,
+                        review.reviewer,
+                        review.comment,
+                        review.created_at AS review_created_at
+                    FROM comparisons AS c
+                    JOIN comparison_runs AS run ON run.comparison_id = c.id
+                    LEFT JOIN comparison_reviews AS review
+                        ON review.comparison_id = c.id
+                    ORDER BY
+                        c.created_at DESC,
+                        CASE run.provider WHEN 'local' THEN 0 ELSE 1 END
+                    """
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise PersistenceError(
+                "No se pudieron consultar las comparaciones."
+            ) from exc
+
+        try:
+            grouped: dict[str, dict[str, object]] = {}
+            for row in rows:
+                comparison_id = cast(str, row["comparison_id"])
+                comparison = grouped.setdefault(
+                    comparison_id,
+                    {
+                        "id": UUID(comparison_id),
+                        "created_at": datetime.fromisoformat(
+                            row["comparison_created_at"]
+                        ),
+                        "results": [],
+                        "review": (
+                            ComparisonReviewRecord(
+                                id=UUID(row["review_id"]),
+                                comparison_id=UUID(comparison_id),
+                                category=row["review_category"],
+                                urgency=row["review_urgency"],
+                                department=row["review_department"],
+                                reviewer=row["reviewer"],
+                                comment=row["comment"],
+                                created_at=datetime.fromisoformat(
+                                    row["review_created_at"]
+                                ),
+                            )
+                            if row["review_id"] is not None
+                            else None
+                        ),
+                    },
+                )
+                results = cast(
+                    list[ComparisonProviderResult], comparison["results"]
+                )
+                results.append(
+                    ComparisonProviderResult(
+                        provider=row["provider"],
+                        result=(
+                            TriageResult.model_validate_json(row["result_json"])
+                            if row["result_json"] is not None
+                            else None
+                        ),
+                        metrics=ExecutionMetrics.model_validate_json(
+                            row["metrics_json"]
+                        ),
+                        error_code=row["error_code"],
+                    )
+                )
+
+            return tuple(
+                ComparisonResponse(
+                    comparison_id=cast(UUID, item["id"]),
+                    created_at=cast(datetime, item["created_at"]),
+                    results=tuple(
+                        cast(list[ComparisonProviderResult], item["results"])
+                    ),
+                    review=cast(ComparisonReviewRecord | None, item["review"]),
+                )
+                for item in grouped.values()
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError(
+                "Las comparaciones guardadas son inválidas."
+            ) from exc
+
     def list_notices(self) -> tuple[NoticeRecord, ...]:
         try:
             with closing(self._connect()) as connection:
@@ -354,6 +541,65 @@ class SQLiteNoticeRepository:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise PersistenceError("Los avisos guardados son inválidos.") from exc
+
+    def query_notices(
+        self,
+        *,
+        search: str | None = None,
+        status: ProposalStatus | None = None,
+        urgency: Urgency | None = None,
+        provider: Provider | None = None,
+        category: Category | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> NoticePage:
+        """Filtra y pagina avisos manteniendo las ejecuciones coincidentes."""
+
+        needle = search.strip().casefold() if search else None
+        filtered: list[NoticeRecord] = []
+        for notice in self.list_notices():
+            matching_runs: list[TriageRunRecord] = []
+            for run in notice.triage_runs:
+                final = run.review.final_classification if run.review else None
+                effective_category = final.category if final else run.proposal.category
+                effective_urgency = final.urgency if final else run.proposal.urgency
+                searchable = " ".join(
+                    value
+                    for value in (
+                        notice.text,
+                        notice.location,
+                        run.proposal.summary,
+                        run.proposal.justification,
+                        run.review.reviewer if run.review else None,
+                        run.review.comment if run.review else None,
+                    )
+                    if value
+                ).casefold()
+                if status is not None and run.status != status:
+                    continue
+                if urgency is not None and effective_urgency != urgency:
+                    continue
+                if provider is not None and run.provider != provider:
+                    continue
+                if category is not None and effective_category != category:
+                    continue
+                if needle is not None and needle not in searchable:
+                    continue
+                matching_runs.append(run)
+            if matching_runs:
+                filtered.append(
+                    notice.model_copy(update={"triage_runs": tuple(matching_runs)})
+                )
+
+        total = len(filtered)
+        offset = (page - 1) * limit
+        return NoticePage(
+            items=tuple(filtered[offset : offset + limit]),
+            page=page,
+            limit=limit,
+            total=total,
+            pages=(total + limit - 1) // limit,
+        )
 
     def review_notice(
         self,
@@ -490,6 +736,12 @@ class SQLiteNoticeRepository:
     def list_audit_events(self, notice_id: UUID) -> tuple[AuditEventRecord, ...]:
         try:
             with closing(self._connect()) as connection:
+                exists = connection.execute(
+                    "SELECT 1 FROM notices WHERE id = ?",
+                    (str(notice_id),),
+                ).fetchone()
+                if exists is None:
+                    raise NoticeNotFoundError("El aviso solicitado no existe.")
                 rows = connection.execute(
                     """
                     SELECT id, notice_id, triage_run_id, event_type,
@@ -500,6 +752,8 @@ class SQLiteNoticeRepository:
                     """,
                     (str(notice_id),),
                 ).fetchall()
+        except NoticeNotFoundError:
+            raise
         except sqlite3.Error as exc:
             raise PersistenceError("No se pudo consultar la auditoría.") from exc
         return tuple(

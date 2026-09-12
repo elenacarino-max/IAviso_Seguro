@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+node_modules
+frontend-react/node_modules
+frontend-react/dist
+__pycache__
+.pytest_cache
+.env
+data/local
+docs
+tmp
+*.db
+*.log

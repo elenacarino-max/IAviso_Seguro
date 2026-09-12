@@ -3,14 +3,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import (
+    AuditEventRecord,
+    Category,
     ErrorResponse,
-    NoticeRecord,
+    NoticePage,
+    ProposalStatus,
+    Provider,
     ReviewRequest,
     ReviewResponse,
+    Urgency,
 )
 
 from .routes_triage import get_notice_repository
@@ -18,14 +23,44 @@ from .routes_triage import get_notice_repository
 router = APIRouter(prefix="/api/v1/notices", tags=["notices"])
 
 
-@router.get("", response_model=list[NoticeRecord])
+@router.get("", response_model=NoticePage)
 def list_notices(
     repository: Annotated[
         SQLiteNoticeRepository,
         Depends(get_notice_repository),
     ],
-) -> tuple[NoticeRecord, ...]:
-    return repository.list_notices()
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    status: ProposalStatus | None = None,
+    urgency: Urgency | None = None,
+    provider: Provider | None = None,
+    category: Category | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> NoticePage:
+    return repository.query_notices(
+        search=search,
+        status=status,
+        urgency=urgency,
+        provider=provider,
+        category=category,
+        page=page,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/{notice_id}/audit-events",
+    response_model=list[AuditEventRecord],
+    responses={404: {"model": ErrorResponse, "description": "Aviso no encontrado"}},
+)
+def list_notice_audit_events(
+    notice_id: UUID,
+    repository: Annotated[
+        SQLiteNoticeRepository,
+        Depends(get_notice_repository),
+    ],
+) -> tuple[AuditEventRecord, ...]:
+    return repository.list_audit_events(notice_id)
 
 
 @router.post(

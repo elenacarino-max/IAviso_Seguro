@@ -9,6 +9,14 @@ class NoticeNotFoundError(RepositoryError):
     """El aviso solicitado no existe."""
 
 
+class ComparisonNotFoundError(RepositoryError):
+    """La comparación solicitada no existe."""
+
+
+class ComparisonReviewConflictError(RepositoryError):
+    """La comparación ya tiene una referencia humana."""
+
+
 class ReviewConflictError(RepositoryError):
     """La propuesta ya cambió o no admite otra revisión."""
 

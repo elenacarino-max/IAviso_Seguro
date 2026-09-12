@@ -58,7 +58,7 @@ class FailingService:
 
 
 class FailingRepository:
-    def list_notices(self):
+    def query_notices(self, **_filters):
         raise PersistenceError("detalle interno")
 
 

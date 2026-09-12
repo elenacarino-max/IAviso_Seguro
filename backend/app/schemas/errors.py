@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 ErrorCode = Literal[
+    "comparison_not_found",
+    "comparison_review_conflict",
     "notice_not_found",
     "persistence_error",
     "review_conflict",
