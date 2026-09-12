@@ -6,6 +6,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.api.routes_health import get_health_service
 from backend.app.api.routes_triage import get_notice_repository, get_triage_service
 from backend.app.main import app
 from backend.app.providers import (
@@ -15,6 +16,7 @@ from backend.app.providers import (
     ProviderRateLimitError,
 )
 from backend.app.repositories import PersistenceError, SQLiteNoticeRepository
+from backend.app.schemas import HealthResponse, ServiceHealth
 from backend.app.services import (
     ExecutionTelemetry,
     InvalidProviderOutputError,
@@ -62,10 +64,33 @@ class FailingRepository:
         raise PersistenceError("detalle interno")
 
 
+class StaticHealthService:
+    def check(self):
+        return HealthResponse(
+            services=(
+                ServiceHealth(id="api", label="API FastAPI", status="available"),
+                ServiceHealth(
+                    id="ollama",
+                    label="Ollama",
+                    status="not_configured",
+                    detail="sin modelo configurado",
+                ),
+                ServiceHealth(
+                    id="gemini",
+                    label="Gemini",
+                    status="not_configured",
+                    detail="no configurado",
+                ),
+                ServiceHealth(id="sqlite", label="SQLite", status="available"),
+            )
+        )
+
+
 @pytest.fixture(autouse=True)
 def isolated_repository(tmp_path):
     repository = SQLiteNoticeRepository(tmp_path / "api-errors.db")
     app.dependency_overrides[get_notice_repository] = lambda: repository
+    app.dependency_overrides[get_health_service] = lambda: StaticHealthService()
     try:
         yield
     finally:
@@ -162,7 +187,8 @@ def test_server_continues_serving_after_provider_failure():
 
     assert failed.status_code == 502
     assert healthy.status_code == 200
-    assert healthy.json() == {"status": "ok"}
+    assert healthy.json()["status"] == "ok"
+    assert healthy.json()["services"][0]["label"] == "API FastAPI"
     assert healthy.headers["X-Request-ID"] != failed.headers["X-Request-ID"]
 
 

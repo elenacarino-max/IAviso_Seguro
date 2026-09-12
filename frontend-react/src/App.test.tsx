@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -38,6 +38,31 @@ afterEach(() => {
 });
 
 describe("IAviso Seguro", () => {
+  it("muestra la arquitectura y distingue Gemini no configurado", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/health") {
+        return new Response(JSON.stringify({
+          status: "ok",
+          services: [
+            { id: "api", label: "API FastAPI", status: "available", detail: null },
+            { id: "ollama", label: "Ollama · llama3.2:3b", status: "available", detail: null },
+            { id: "gemini", label: "Gemini", status: "not_configured", detail: "no configurado" },
+            { id: "sqlite", label: "SQLite", status: "available", detail: null },
+          ],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+
+    const services = await screen.findByLabelText("Estado de servicios");
+    expect(within(services).getByText("API FastAPI")).toBeInTheDocument();
+    expect(within(services).getByText("Ollama · llama3.2:3b")).toBeInTheDocument();
+    expect(within(services).getByText(/no configurado/)).toBeInTheDocument();
+    expect(within(services).getByText("SQLite")).toBeInTheDocument();
+  });
+
   it("mantiene visible que la revisión humana es obligatoria", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify([]), { status: 200 }));
     render(<App />);

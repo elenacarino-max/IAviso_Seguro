@@ -158,6 +158,16 @@ class SQLiteNoticeRepository:
             Path(self._database_path).parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
+    def is_available(self) -> bool:
+        """Comprueba que SQLite acepta una consulta mínima."""
+
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute("SELECT 1").fetchone()
+        except sqlite3.Error:
+            return False
+        return row is not None and row[0] == 1
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(
             self._database_path,

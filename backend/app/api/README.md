@@ -2,7 +2,8 @@
 
 Rutas HTTP:
 
-- `GET /health`: confirma que FastAPI está disponible.
+- `GET /health`: confirma que FastAPI está disponible y comunica por separado
+  la salud de Ollama, Gemini y SQLite; las sondas de modelos no generan texto.
 - `POST /api/v1/triage`: valida la entrada y selecciona Ollama con
   `provider=local` o Gemini con `provider=external`; persiste la propuesta como
   `pending_review`.
@@ -15,8 +16,9 @@ Rutas HTTP:
   eventos persistidos de creación y revisión del aviso.
 - `POST /api/v1/notices/{notice_id}/reviews`: aprueba, modifica o rechaza la
   propuesta pendiente usando control de versión optimista.
-- `POST /api/v1/comparisons`: ejecuta la misma entrada en ambos proveedores,
-  devuelve resultados o errores individuales y no crea avisos duplicados.
+- `POST /api/v1/comparisons`: ejecuta concurrentemente la misma entrada en
+  ambos proveedores, conserva el orden estable local/externo, devuelve
+  resultados o errores individuales y no crea avisos duplicados.
 - `POST /api/v1/comparisons/{comparison_id}/review`: guarda una única
   clasificación humana de referencia para contrastar los resultados de ambos
   proveedores.

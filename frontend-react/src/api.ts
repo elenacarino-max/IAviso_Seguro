@@ -7,6 +7,7 @@ import type {
   CreateTriageInput,
   ErrorCode,
   EvaluationReport,
+  HealthResponse,
   MetricsSummary,
   AuditEventRecord,
   NoticePage,
@@ -96,13 +97,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  async health(): Promise<boolean> {
-    try {
-      const response = await request<{ status: "ok" }>("/health");
-      return response.status === "ok";
-    } catch {
-      return false;
-    }
+  async health(): Promise<HealthResponse> {
+    return request<HealthResponse>("/health");
   },
 
   async getCatalogs(): Promise<CatalogsResponse> {

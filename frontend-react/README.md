@@ -27,3 +27,8 @@ npm run build
 ```
 
 No se almacenan credenciales en el navegador. Las claves y la selección real de modelos continúan configurándose en el backend.
+
+La barra lateral consume `GET /health` una vez al cargar y muestra FastAPI,
+Ollama con su modelo, Gemini y SQLite. Un círculo vacío indica que el servicio no
+está configurado; un estado de error se acompaña de texto y no depende solo del
+color.

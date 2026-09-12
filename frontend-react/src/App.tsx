@@ -33,6 +33,7 @@ import type {
   ComparisonResponse,
   Department,
   EvaluationReport,
+  HealthResponse,
   MetricsSummary,
   NoticeRecord,
   NoticePage,
@@ -66,6 +67,13 @@ const statusLabels: Record<ProposalStatus, string> = {
   modified: "Corregido",
   rejected: "Rechazado",
 };
+
+const serviceFallbacks = [
+  { id: "api", label: "API FastAPI" },
+  { id: "ollama", label: "Ollama" },
+  { id: "gemini", label: "Gemini" },
+  { id: "sqlite", label: "SQLite" },
+] as const;
 type CatalogValue = Category | Urgency | Department;
 const optionLabels = {
   riesgo_electrico: "Riesgo eléctrico",
@@ -126,7 +134,7 @@ function StatusMessage({ error }: { error: unknown }) {
 function App() {
   const [view, setView] = useState<View>("new");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null | undefined>(undefined);
   const [pendingCount, setPendingCount] = useState(0);
   const [riskMatrix, setRiskMatrix] = useState<RiskMatrixDocument | null>(null);
   const [riskMatrixError, setRiskMatrixError] = useState<unknown>(null);
@@ -139,7 +147,10 @@ function App() {
   };
 
   useEffect(() => {
-    void api.health().then(setApiOnline);
+    void api.health().then(setHealth).catch(() => setHealth(null));
+  }, []);
+
+  useEffect(() => {
     void api
       .listNotices({ status: "pending_review", page: 1, limit: 1 })
       .then((page) => setPendingCount(page.total))
@@ -183,9 +194,23 @@ function App() {
           <UserRoundCheck size={20} />
           <p><strong>Decisión humana</strong>La IA propone. Un técnico siempre valida.</p>
         </div>
-        <div className={`connection ${apiOnline === true ? "online" : apiOnline === false ? "offline" : "checking"}`}>
-          <i />
-          {apiOnline === true ? "API conectada" : apiOnline === false ? "API sin conexión" : "Comprobando API"}
+        <div className="service-health" aria-label="Estado de servicios">
+          <div className="rail-label">Servicios</div>
+          {(health?.services ?? serviceFallbacks.map((service) => ({
+            ...service,
+            status: health === undefined ? "checking" : "unavailable",
+            detail: health === undefined
+              ? "comprobando"
+              : service.id === "api" ? "sin conexión" : "estado desconocido",
+          }))).map((service) => (
+            <div className={`service-row ${service.status}`} key={service.id}>
+              <i aria-hidden="true" />
+              <span>
+                {service.label}
+                {service.detail && <small> · {service.detail}</small>}
+              </span>
+            </div>
+          ))}
         </div>
       </aside>
 

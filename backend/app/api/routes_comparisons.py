@@ -1,5 +1,6 @@
 """Comparación trazable de ambos proveedores con una única entrada."""
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 from uuid import UUID
 
@@ -36,8 +37,9 @@ def create_comparison(
         Depends(get_notice_repository),
     ],
 ) -> ComparisonResponse:
-    results: list[ComparisonProviderResult] = []
-    for provider in ("local", "external"):
+    request_id = request.state.request_id
+
+    def execute_provider(provider: str) -> ComparisonProviderResult:
         triage_request = TriageRequest(
             text=payload.text,
             location=payload.location,
@@ -45,20 +47,29 @@ def create_comparison(
         )
         execution = service.execute(
             triage_request,
-            request_id=f"{request.state.request_id}:{provider}",
+            request_id=f"{request_id}:{provider}",
         )
-        results.append(
-            ComparisonProviderResult(
-                provider=provider,
-                result=execution.result,
-                error_code=error_code_for(execution.error),
-                metrics=metrics_service.build(
-                    triage_request,
-                    execution.telemetry,
-                ),
-            )
+        return ComparisonProviderResult(
+            provider=provider,
+            result=execution.result,
+            error_code=error_code_for(execution.error),
+            metrics=metrics_service.build(
+                triage_request,
+                execution.telemetry,
+            ),
         )
-    return repository.create_comparison(payload, tuple(results))
+
+    providers = ("local", "external")
+    with ThreadPoolExecutor(
+        max_workers=len(providers),
+        thread_name_prefix="comparison-provider",
+    ) as executor:
+        futures = {
+            provider: executor.submit(execute_provider, provider)
+            for provider in providers
+        }
+        results = tuple(futures[provider].result() for provider in providers)
+    return repository.create_comparison(payload, results)
 
 
 @router.post(

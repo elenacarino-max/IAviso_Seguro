@@ -2,7 +2,7 @@
 
 from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
 from .errors import ErrorCode, ErrorDetail, ErrorResponse
-from .health import HealthResponse
+from .health import HealthResponse, ServiceHealth, ServiceId, ServiceStatus
 from .metrics import (
     ComparisonProviderResult,
     ComparisonRequest,
@@ -76,6 +76,9 @@ __all__ = [
     "RiskMatrixObservation",
     "RiskMatrixQuery",
     "RiskMatrixRule",
+    "ServiceHealth",
+    "ServiceId",
+    "ServiceStatus",
     "TriageProposalResponse",
     "TriageRequest",
     "TriageResult",

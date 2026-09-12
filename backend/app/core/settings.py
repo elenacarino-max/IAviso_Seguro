@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     ollama_base_url: AnyHttpUrl = "http://127.0.0.1:11434"
     local_model: str = ""
     llm_timeout_seconds: float = Field(default=30, gt=0, le=300)
+    health_check_timeout_seconds: float = Field(default=2, gt=0, le=10)
     ollama_temperature: float = Field(default=0, ge=0, le=2)
     ollama_top_p: float = Field(default=0.9, gt=0, le=1)
     external_api_base_url: AnyHttpUrl = (

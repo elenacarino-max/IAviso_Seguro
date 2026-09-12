@@ -3,6 +3,8 @@
 Las Fases 2 y 3 incorporan:
 
 - Configuración validada de `LLM_REPAIR_ATTEMPTS` entre 0 y 3.
+- Timeout independiente de 1 a 10 segundos para las sondas de salud mediante
+  `HEALTH_CHECK_TIMEOUT_SECONDS`.
 - Logging JSON con evento, nivel, fecha, `request_id`, intento y resultado; para herramientas añade nombre, argumentos validados, versión de matriz y regla aplicada.
 - Middleware que genera un UUID por petición y lo devuelve en `X-Request-ID`.
 - Traducción de fallos esperados de proveedor, herramienta y matriz a errores HTTP estables.

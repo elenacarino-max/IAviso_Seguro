@@ -4,6 +4,24 @@ import { api } from "./api";
 afterEach(() => vi.restoreAllMocks());
 
 describe("cliente de FastAPI", () => {
+  it("recupera la salud detallada de los servicios", async () => {
+    const payload = {
+      status: "ok",
+      services: [
+        { id: "api", label: "API FastAPI", status: "available", detail: null },
+      ],
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify(payload), { status: 200 }),
+    );
+
+    await expect(api.health()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/health",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
   it("usa los endpoints existentes y conserva el contrato de alta", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify({ notice_id: "n-1", id: "r-1" }), { status: 200 }),

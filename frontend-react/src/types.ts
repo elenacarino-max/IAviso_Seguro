@@ -3,6 +3,8 @@ export type View = "new" | "inbox" | "dashboard" | "matrix" | "compare";
 export type ReviewDecision = "approved" | "modified" | "rejected";
 export type ProposalStatus = "pending_review" | ReviewDecision;
 export type AuditEventType = "triage_created" | "review_completed";
+export type ServiceId = "api" | "ollama" | "gemini" | "sqlite";
+export type ServiceStatus = "available" | "unavailable" | "not_configured";
 export type Category =
   | "riesgo_electrico"
   | "caidas_obstaculos"
@@ -33,6 +35,18 @@ export interface CatalogsResponse {
   categories: Category[];
   urgencies: Urgency[];
   departments: Department[];
+}
+
+export interface ServiceHealth {
+  id: ServiceId;
+  label: string;
+  status: ServiceStatus;
+  detail: string | null;
+}
+
+export interface HealthResponse {
+  status: "ok";
+  services: ServiceHealth[];
 }
 
 export interface TriageProposal {

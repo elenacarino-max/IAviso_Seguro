@@ -1,15 +1,68 @@
 """Pruebas del recorrido HTTP de triaje con herramienta real."""
 
+from threading import Barrier, get_ident
+
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.app.api.routes_health import get_health_service
 from backend.app.api.routes_triage import get_notice_repository, get_triage_service
 from backend.app.main import app
-from backend.app.providers import MockTriageProvider
+from backend.app.providers import MockTriageProvider, ToolCall
 from backend.app.repositories import SQLiteNoticeRepository
+from backend.app.schemas import HealthResponse, ServiceHealth
 from backend.app.services import TriageService
 
 client = TestClient(app)
+
+
+class StaticHealthService:
+    def check(self):
+        return HealthResponse(
+            services=(
+                ServiceHealth(id="api", label="API FastAPI", status="available"),
+                ServiceHealth(
+                    id="ollama",
+                    label="Ollama · llama3.2:3b",
+                    status="available",
+                ),
+                ServiceHealth(
+                    id="gemini",
+                    label="Gemini",
+                    status="not_configured",
+                    detail="no configurado",
+                ),
+                ServiceHealth(id="sqlite", label="SQLite", status="available"),
+            )
+        )
+
+
+class ConcurrentProbeProvider:
+    """Solo finaliza si las dos ejecuciones alcanzan juntas cada paso."""
+
+    def __init__(self) -> None:
+        self.barrier = Barrier(2, timeout=2)
+        self.thread_ids: set[int] = set()
+
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
+        self.thread_ids.add(get_ident())
+        self.barrier.wait()
+        if observation is None:
+            return ToolCall(
+                name="consultar_matriz_riesgos",
+                arguments={"category": "otros"},
+            )
+        return {
+            "category": "otros",
+            "urgency": "media",
+            "summary": (
+                "Aviso recibido correctamente y preparado para revisión humana del técnico."
+            ),
+            "department": "prevencion",
+            "justification": (
+                "Matriz didáctica y propuesta pendiente de revisión profesional."
+            ),
+        }
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +72,7 @@ def use_mock_provider_for_contract_tests(tmp_path):
         MockTriageProvider()
     )
     app.dependency_overrides[get_notice_repository] = lambda: repository
+    app.dependency_overrides[get_health_service] = lambda: StaticHealthService()
     try:
         yield repository
     finally:
@@ -29,7 +83,35 @@ def test_health_reports_service_available():
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": "ok",
+        "services": [
+            {
+                "id": "api",
+                "label": "API FastAPI",
+                "status": "available",
+                "detail": None,
+            },
+            {
+                "id": "ollama",
+                "label": "Ollama · llama3.2:3b",
+                "status": "available",
+                "detail": None,
+            },
+            {
+                "id": "gemini",
+                "label": "Gemini",
+                "status": "not_configured",
+                "detail": "no configurado",
+            },
+            {
+                "id": "sqlite",
+                "label": "SQLite",
+                "status": "available",
+                "detail": None,
+            },
+        ],
+    }
 
 
 def test_catalogs_endpoint_exposes_the_exact_closed_domain():
@@ -148,6 +230,25 @@ def test_comparison_uses_same_input_without_creating_notices(
     assert body["results"][0]["metrics"]["api_cost"] == "0"
     assert body["results"][1]["metrics"]["api_cost"] is None
     assert repository.list_notices() == ()
+
+
+def test_comparison_executes_both_providers_concurrently(
+    use_mock_provider_for_contract_tests,
+):
+    probe = ConcurrentProbeProvider()
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(probe)
+
+    response = client.post(
+        "/api/v1/comparisons",
+        json={"text": "Caso sintético concurrente"},
+    )
+
+    assert response.status_code == 200
+    assert [item["provider"] for item in response.json()["results"]] == [
+        "local",
+        "external",
+    ]
+    assert len(probe.thread_ids) == 2
 
 
 def test_evaluation_exposes_quality_latency_and_cost_without_creating_notices(

@@ -4,11 +4,12 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 10 completada: el MVP ofrece un recorrido reproducible desde una SPA React
+Fase 11 completada: el MVP ofrece un recorrido reproducible desde una SPA React
 hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
-La API permite consultar la matriz activa, comparar ambos proveedores con una misma entrada sin crear dos
+La API permite consultar la matriz activa, comparar ambos proveedores
+concurrentemente con una misma entrada sin crear dos
 avisos finales, guardar una única decisión humana sobre esa comparación y consultar
 un resumen histórico de evaluación por proveedor. Las propuestas se guardan en SQLite como `pending_review` y
 mantienen una revisión humana versionada. La interfaz React permite crear,
@@ -21,6 +22,8 @@ muestra aceptación, corrección, latencia, reparaciones, acuerdo humano, tokens
 Streamlit se conserva
 como respaldo académico. La resolución
 operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
+La barra lateral muestra además la disponibilidad de FastAPI, el modelo de
+Ollama, Gemini y SQLite sin exponer URLs, rutas locales ni credenciales.
 
 Los valores cerrados de categoría, urgencia y departamento se publican mediante
 `GET /api/v1/catalogs` y alimentan directamente los desplegables de revisión.
@@ -188,6 +191,15 @@ Variables del proveedor externo:
 Si falta la clave externa, la API responde `503` sin intentar una conexión. Un
 aviso nunca se redirige implícitamente a otro proveedor.
 
+`GET /health` mantiene `status: "ok"` para indicar que FastAPI atiende y
+añade una lista ordenada de servicios. Ollama se comprueba con `/api/tags` y
+solo figura disponible si está instalado el modelo configurado; Gemini consulta
+los metadatos del modelo únicamente cuando existe clave; SQLite ejecuta una
+consulta mínima. Estas sondas no generan contenido, se ejecutan Ollama/Gemini en
+paralelo y están limitadas por `HEALTH_CHECK_TIMEOUT_SECONDS` (2 segundos por
+defecto). Una dependencia ausente se comunica dentro del cuerpo sin convertir
+la disponibilidad básica de la API en un error HTTP.
+
 ## Prompts, herramienta y seguridad
 
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
@@ -214,6 +226,11 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
 entre 0 y 3. Los reintentos externos son independientes de esas reparaciones:
 solo cubren fallos transitorios y quedan limitados por la configuración anterior.
+
+`POST /api/v1/comparisons` envía el caso a Ollama y Gemini mediante dos
+trabajadores concurrentes. La respuesta conserva siempre el orden estable
+`local`, `external`; cada resultado mantiene su propia telemetría y error, y
+la escritura SQLite se realiza una sola vez cuando ambos han terminado.
 
 Las métricas nunca convierten un dato ausente en cero. El coste de API local es
 `0`, mientras que su coste computacional queda como `null` porque depende del
