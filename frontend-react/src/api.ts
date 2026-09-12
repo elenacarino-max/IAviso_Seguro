@@ -1,18 +1,50 @@
 import type {
   ApiFailure,
+  CatalogsResponse,
   ComparisonResponse,
+  ComparisonReviewInput,
+  ComparisonReviewRecord,
   CreateTriageInput,
-  Notice,
-  RiskMatrixDocument,
+  ErrorCode,
+  EvaluationReport,
+  MetricsSummary,
+  AuditEventRecord,
+  NoticePage,
+  NoticeQuery,
   ReviewInput,
-  TriageProposal,
-  TriageRun,
+  ReviewResponse,
+  RiskMatrixDocument,
+  TriageProposalResponse,
 } from "./types";
 
 const API_ROOT = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+const ERROR_CODES: readonly ErrorCode[] = [
+  "comparison_not_found",
+  "comparison_review_conflict",
+  "notice_not_found",
+  "persistence_error",
+  "review_conflict",
+  "invalid_provider_output",
+  "provider_unavailable",
+  "provider_rate_limited",
+  "invalid_tool_arguments",
+  "invalid_risk_matrix",
+  "required_tool_not_executed",
+  "tool_step_limit_exceeded",
+];
+
+type JsonObject = Record<string, unknown>;
+
+const asObject = (value: unknown): JsonObject | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonObject
+    : null;
+
+const isErrorCode = (value: unknown): value is ErrorCode =>
+  typeof value === "string" && ERROR_CODES.some((code) => code === value);
 
 export class ApiError extends Error {
-  code?: string;
+  code?: ErrorCode;
   requestId?: string;
   status: number;
 
@@ -38,14 +70,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
   }
 
-  const payload = await response.json().catch(() => null);
+  const payload: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = payload?.detail ?? payload?.error ?? payload ?? {};
+    const container = asObject(payload);
+    const detail = asObject(container?.error) ?? asObject(container?.detail) ?? container;
+    const messageValue = detail?.message ?? detail?.detail;
+    const codeValue = detail?.code;
+    const requestIdValue = container?.request_id;
     throw new ApiError(
       {
-        message: detail.message ?? detail.detail ?? `La API respondió con estado ${response.status}.`,
-        code: detail.code,
-        requestId: detail.request_id ?? response.headers.get("X-Request-ID") ?? undefined,
+        message: typeof messageValue === "string"
+          ? messageValue
+          : response.status === 422
+            ? "Revisa los campos introducidos."
+            : `La API respondió con estado ${response.status}.`,
+        code: isErrorCode(codeValue) ? codeValue : undefined,
+        requestId: typeof requestIdValue === "string"
+          ? requestIdValue
+          : response.headers.get("X-Request-ID") ?? undefined,
       },
       response.status,
     );
@@ -53,74 +95,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-const object = (value: unknown): Record<string, any> =>
-  value && typeof value === "object" ? (value as Record<string, any>) : {};
-
-const proposalFrom = (raw: unknown): TriageProposal => {
-  const item = object(raw);
-  return {
-    category: String(item.category ?? item.categoria ?? "otros") as TriageProposal["category"],
-    urgency: String(item.urgency ?? item.urgencia ?? "media") as TriageProposal["urgency"],
-    summary: String(item.summary ?? item.resumen ?? "Sin resumen"),
-    department: String(item.department ?? item.departamento ?? "prevencion") as TriageProposal["department"],
-    justification: item.justification ?? item.justificacion,
-  };
-};
-
-const runFrom = (raw: unknown): TriageRun => {
-  const item = object(raw);
-  const proposal = item.result ?? item.proposal ?? item.original_proposal ?? item.classification ?? item;
-  return {
-    triage_run_id: String(item.triage_run_id ?? item.run_id ?? item.id ?? ""),
-    provider: String(item.provider ?? "—"),
-    model: item.model ? String(item.model) : undefined,
-    status: String(item.status ?? "pending_review"),
-    version: Number(item.version ?? 0),
-    created_at: item.created_at,
-    proposal: proposalFrom(proposal),
-    review: item.review ?? null,
-  };
-};
-
-const noticeFrom = (raw: unknown): Notice => {
-  const item = object(raw);
-  const rawRuns = item.triage_runs ?? item.runs ?? (item.triage_run ? [item.triage_run] : []);
-  return {
-    notice_id: String(item.notice_id ?? item.id ?? ""),
-    text: String(item.text ?? item.description ?? item.aviso ?? ""),
-    location: item.location ?? item.ubicacion ?? null,
-    created_at: item.created_at,
-    triage_runs: Array.isArray(rawRuns) ? rawRuns.map(runFrom) : [],
-  };
-};
-
 export const api = {
   async health(): Promise<boolean> {
     try {
-      await request("/health");
-      return true;
+      const response = await request<{ status: "ok" }>("/health");
+      return response.status === "ok";
     } catch {
       return false;
     }
   },
 
-  async createTriage(input: CreateTriageInput): Promise<Record<string, any>> {
-    return request("/api/v1/triage", { method: "POST", body: JSON.stringify(input) });
+  async getCatalogs(): Promise<CatalogsResponse> {
+    return request<CatalogsResponse>("/api/v1/catalogs");
   },
 
-  async listNotices(): Promise<Notice[]> {
-    const payload = await request<unknown>("/api/v1/notices");
-    const container = object(payload);
-    const items = Array.isArray(payload) ? payload : container.items ?? container.notices ?? [];
-    return Array.isArray(items) ? items.map(noticeFrom) : [];
+  async createTriage(input: CreateTriageInput): Promise<TriageProposalResponse> {
+    return request<TriageProposalResponse>("/api/v1/triage", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async listNotices(query: NoticeQuery = {}): Promise<NoticePage> {
+    const params = new URLSearchParams();
+    if (query.search?.trim()) params.set("search", query.search.trim());
+    if (query.status) params.set("status", query.status);
+    if (query.urgency) params.set("urgency", query.urgency);
+    if (query.provider) params.set("provider", query.provider);
+    if (query.category) params.set("category", query.category);
+    if (query.page !== undefined) params.set("page", String(query.page));
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    const suffix = params.size ? `?${params.toString()}` : "";
+    return request<NoticePage>(`/api/v1/notices${suffix}`);
+  },
+
+  async getAuditEvents(noticeId: string): Promise<AuditEventRecord[]> {
+    return request<AuditEventRecord[]>(`/api/v1/notices/${encodeURIComponent(noticeId)}/audit-events`);
   },
 
   async getRiskMatrix(): Promise<RiskMatrixDocument> {
     return request<RiskMatrixDocument>("/api/v1/risk-matrix");
   },
 
-  async reviewNotice(noticeId: string, input: ReviewInput): Promise<Record<string, any>> {
-    return request(`/api/v1/notices/${encodeURIComponent(noticeId)}/reviews`, {
+  async reviewNotice(noticeId: string, input: ReviewInput): Promise<ReviewResponse> {
+    return request<ReviewResponse>(`/api/v1/notices/${encodeURIComponent(noticeId)}/reviews`, {
       method: "POST",
       body: JSON.stringify(input),
     });
@@ -132,6 +150,19 @@ export const api = {
       body: JSON.stringify({ text, location }),
     });
   },
-};
 
-export const normalizeTriageResponse = (raw: unknown): TriageRun => runFrom(raw);
+  async reviewComparison(comparisonId: string, input: ComparisonReviewInput): Promise<ComparisonReviewRecord> {
+    return request<ComparisonReviewRecord>(`/api/v1/comparisons/${encodeURIComponent(comparisonId)}/review`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getMetricsSummary(): Promise<MetricsSummary> {
+    return request<MetricsSummary>("/api/v1/metrics/summary");
+  },
+
+  async runEvaluation(): Promise<EvaluationReport> {
+    return request<EvaluationReport>("/api/v1/evaluations", { method: "POST" });
+  },
+};

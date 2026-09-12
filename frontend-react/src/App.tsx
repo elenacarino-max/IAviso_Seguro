@@ -17,22 +17,33 @@ import {
   Menu,
   Plus,
   RefreshCw,
+  Search,
   ShieldCheck,
   Sparkles,
   UserRoundCheck,
   X,
 } from "lucide-react";
-import { ApiError, api, normalizeTriageResponse } from "./api";
+import { ApiError, api } from "./api";
 import type {
+  AuditEventRecord,
+  CatalogsResponse,
   Category,
+  ComparisonProviderResult,
+  ComparisonReviewRecord,
   ComparisonResponse,
   Department,
-  Notice,
+  EvaluationReport,
+  MetricsSummary,
+  NoticeRecord,
+  NoticePage,
+  NoticeQuery,
   Provider,
+  ProposalStatus,
   RiskMatrixDocument,
   ReviewDecision,
   TriageProposal,
-  TriageRun,
+  TriageProposalResponse,
+  TriageRunRecord,
   Urgency,
   View,
 } from "./types";
@@ -46,20 +57,42 @@ const NAV: Array<{ id: View; label: string; hint: string; icon: typeof Plus }> =
 ];
 
 const providerNames: Record<Provider, string> = { local: "Ollama · local", external: "Gemini · externo" };
-const categories: Category[] = [
-  "riesgo_electrico",
-  "caidas_obstaculos",
-  "incendio",
-  "maquinaria",
-  "sustancias_peligrosas",
-  "problemas_estructurales",
-  "falta_epi",
-  "ergonomia",
-  "otros",
-];
-const urgencies: Urgency[] = ["baja", "media", "alta", "critica"];
-const departments: Department[] = ["prevencion", "mantenimiento", "seguridad", "limpieza"];
-const optionLabel = (value: string) => value.replaceAll("_", " ");
+const providers = ["local", "external"] satisfies readonly Provider[];
+const reviewDecisions = ["approved", "modified", "rejected"] satisfies readonly ReviewDecision[];
+const proposalStatuses = ["pending_review", ...reviewDecisions] satisfies readonly ProposalStatus[];
+const statusLabels: Record<ProposalStatus, string> = {
+  pending_review: "Pendiente",
+  approved: "Aprobado",
+  modified: "Corregido",
+  rejected: "Rechazado",
+};
+type CatalogValue = Category | Urgency | Department;
+const optionLabels = {
+  riesgo_electrico: "Riesgo eléctrico",
+  caidas_obstaculos: "Caídas y obstáculos",
+  incendio: "Incendio",
+  maquinaria: "Maquinaria",
+  sustancias_peligrosas: "Sustancias peligrosas",
+  problemas_estructurales: "Problemas estructurales",
+  falta_epi: "Falta de EPI",
+  ergonomia: "Ergonomía",
+  otros: "Otros",
+  baja: "Baja",
+  media: "Media",
+  alta: "Alta",
+  critica: "Crítica",
+  prevencion: "Prevención",
+  mantenimiento: "Mantenimiento",
+  seguridad: "Seguridad",
+  limpieza: "Limpieza",
+} satisfies Record<CatalogValue, string>;
+const optionLabel = (value: CatalogValue) => optionLabels[value];
+
+const catalogValue = <T extends string>(value: string, catalog: readonly T[]): T => {
+  const match = catalog.find((item) => item === value);
+  if (match === undefined) throw new Error("El valor seleccionado no pertenece al catálogo activo.");
+  return match;
+};
 
 const urgencyTone = (urgency: string) => {
   const value = urgency.toLowerCase();
@@ -97,6 +130,8 @@ function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [riskMatrix, setRiskMatrix] = useState<RiskMatrixDocument | null>(null);
   const [riskMatrixError, setRiskMatrixError] = useState<unknown>(null);
+  const [catalogs, setCatalogs] = useState<CatalogsResponse | null>(null);
+  const [catalogsError, setCatalogsError] = useState<unknown>(null);
 
   const navigate = (next: View) => {
     setView(next);
@@ -106,17 +141,14 @@ function App() {
   useEffect(() => {
     void api.health().then(setApiOnline);
     void api
-      .listNotices()
-      .then((notices) =>
-        setPendingCount(
-          notices.flatMap((notice) => notice.triage_runs).filter((run) => run.status === "pending_review").length,
-        ),
-      )
+      .listNotices({ status: "pending_review", page: 1, limit: 1 })
+      .then((page) => setPendingCount(page.total))
       .catch(() => undefined);
   }, [view]);
 
   useEffect(() => {
     void api.getRiskMatrix().then(setRiskMatrix).catch(setRiskMatrixError);
+    void api.getCatalogs().then(setCatalogs).catch(setCatalogsError);
   }, []);
 
   return (
@@ -169,10 +201,10 @@ function App() {
           <div className="human-badge"><span>HITL</span> Revisión obligatoria</div>
         </header>
         {view === "new" && <NewNotice riskMatrix={riskMatrix} onCreated={() => navigate("inbox")} />}
-        {view === "inbox" && <InboxView riskMatrix={riskMatrix} onPendingChange={setPendingCount} />}
+        {view === "inbox" && <InboxView riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onPendingChange={setPendingCount} />}
         {view === "dashboard" && <Dashboard />}
         {view === "matrix" && <MatrixView matrix={riskMatrix} error={riskMatrixError} />}
-        {view === "compare" && <Comparison riskMatrix={riskMatrix} />}
+        {view === "compare" && <Comparison riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} />}
       </main>
     </div>
   );
@@ -194,7 +226,7 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
   const [provider, setProvider] = useState<Provider>("local");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [result, setResult] = useState<TriageRun | null>(null);
+  const [result, setResult] = useState<TriageProposalResponse | null>(null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -202,8 +234,7 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
     setError(null);
     setResult(null);
     try {
-      const response = await api.createTriage({ text: text.trim(), provider, location: location.trim() || null });
-      setResult(normalizeTriageResponse(response));
+      setResult(await api.createTriage({ text: text.trim(), provider, location: location.trim() || null }));
     } catch (caught) {
       setError(caught);
     } finally {
@@ -245,7 +276,7 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
 
           <fieldset className="provider-picker">
             <legend>Motor de análisis</legend>
-            {(["local", "external"] as Provider[]).map((value) => (
+            {providers.map((value) => (
               <label key={value} className={provider === value ? "selected" : ""}>
                 <input type="radio" name="provider" value={value} checked={provider === value} onChange={() => setProvider(value)} />
                 <span className="provider-icon">{value === "local" ? <Activity /> : <Sparkles />}</span>
@@ -280,13 +311,13 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
       {result && (
         <div className="result-banner" role="status">
           <div><Check /><span><strong>Propuesta creada</strong>Queda pendiente de validación humana.</span></div>
-          <div className={`urgency ${urgencyTone(result.proposal.urgency)}`}>{result.proposal.urgency}</div>
+          <div className={`urgency ${urgencyTone(result.urgency)}`}>{optionLabel(result.urgency)}</div>
           <div className="result-fields">
-            <p><b>Categoría</b>{optionLabel(result.proposal.category)}</p>
-            <p><b>Departamento</b>{optionLabel(result.proposal.department)}</p>
-            <p><b>Resumen</b>{result.proposal.summary}</p>
+            <p><b>Categoría</b>{optionLabel(result.category)}</p>
+            <p><b>Departamento</b>{optionLabel(result.department)}</p>
+            <p><b>Resumen</b>{result.summary}</p>
           </div>
-          <ProposalExplanation proposal={result.proposal} riskMatrix={riskMatrix} />
+          <ProposalExplanation proposal={result} riskMatrix={riskMatrix} />
           <button onClick={onCreated}>Abrir bandeja <ArrowRight size={17} /></button>
         </div>
       )}
@@ -294,9 +325,11 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
   );
 }
 
-function InboxView({ riskMatrix, onPendingChange }: { riskMatrix: RiskMatrixDocument | null; onPendingChange: (value: number) => void }) {
-  const [notices, setNotices] = useState<Notice[]>([]);
-  const [selected, setSelected] = useState<{ notice: Notice; run: TriageRun } | null>(null);
+function InboxView({ riskMatrix, catalogs, catalogsError, onPendingChange }: { riskMatrix: RiskMatrixDocument | null; catalogs: CatalogsResponse | null; catalogsError: unknown; onPendingChange: (value: number) => void }) {
+  const [pageData, setPageData] = useState<NoticePage>({ items: [], page: 1, limit: 20, total: 0, pages: 0 });
+  const [query, setQuery] = useState<NoticeQuery>({ status: "pending_review", page: 1, limit: 20 });
+  const [searchInput, setSearchInput] = useState("");
+  const [selected, setSelected] = useState<{ notice: NoticeRecord; run: TriageRunRecord } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
@@ -304,10 +337,12 @@ function InboxView({ riskMatrix, onPendingChange }: { riskMatrix: RiskMatrixDocu
     setLoading(true);
     setError(null);
     try {
-      const next = await api.listNotices();
-      setNotices(next);
-      const count = next.flatMap((notice) => notice.triage_runs).filter((run) => run.status === "pending_review").length;
-      onPendingChange(count);
+      const [next, pending] = await Promise.all([
+        api.listNotices(query),
+        api.listNotices({ status: "pending_review", page: 1, limit: 1 }),
+      ]);
+      setPageData(next);
+      onPendingChange(pending.total);
     } catch (caught) {
       setError(caught);
     } finally {
@@ -315,11 +350,20 @@ function InboxView({ riskMatrix, onPendingChange }: { riskMatrix: RiskMatrixDocu
     }
   };
 
-  useEffect(() => { void load(); }, []);
-  const pending = useMemo(
-    () => notices.flatMap((notice) => notice.triage_runs.filter((run) => run.status === "pending_review").map((run) => ({ notice, run }))),
-    [notices],
+  useEffect(() => { void load(); }, [query]);
+  const entries = useMemo(
+    () => pageData.items.flatMap((notice) => notice.triage_runs.map((run) => ({ notice, run }))),
+    [pageData.items],
   );
+  const updateQuery = (change: Partial<NoticeQuery>) => {
+    setSelected(null);
+    setQuery((current) => ({ ...current, ...change, page: change.page ?? 1 }));
+  };
+  const resetFilters = () => {
+    setSearchInput("");
+    setSelected(null);
+    setQuery({ status: "pending_review", page: 1, limit: 20 });
+  };
 
   return (
     <section className="page-content">
@@ -330,29 +374,46 @@ function InboxView({ riskMatrix, onPendingChange }: { riskMatrix: RiskMatrixDocu
         <button className="secondary-action" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} /> Actualizar</button>
       </div>
       <StatusMessage error={error} />
+      <div className="inbox-filters work-card">
+        <form className="inbox-search" onSubmit={(event) => { event.preventDefault(); updateQuery({ search: searchInput.trim() || undefined }); }}>
+          <label><span>Buscar</span><div><Search size={16} /><input value={searchInput} onChange={(event) => setSearchInput(event.target.value)} maxLength={200} placeholder="Texto, ubicación, resumen o revisor…" /></div></label>
+          <button className="secondary-action" type="submit">Buscar</button>
+        </form>
+        <div className="filter-grid">
+          <label>Estado<select value={query.status ?? ""} onChange={(event) => updateQuery({ status: event.target.value ? catalogValue(event.target.value, proposalStatuses) : undefined })}><option value="">Todos</option>{proposalStatuses.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label>
+          <label>Urgencia<select value={query.urgency ?? ""} onChange={(event) => updateQuery({ urgency: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.urgencies) : undefined })}><option value="">Todas</option>{catalogs?.urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+          <label>Categoría<select value={query.category ?? ""} onChange={(event) => updateQuery({ category: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.categories) : undefined })}><option value="">Todas</option>{catalogs?.categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+          <label>Motor<select value={query.provider ?? ""} onChange={(event) => updateQuery({ provider: event.target.value ? catalogValue(event.target.value, providers) : undefined })}><option value="">Todos</option>{providers.map((value) => <option key={value} value={value}>{providerNames[value]}</option>)}</select></label>
+          <button className="filter-reset" type="button" onClick={resetFilters}>Restablecer</button>
+        </div>
+      </div>
       <div className="inbox-layout">
         <div className="queue">
-          <div className="queue-head"><span>Pendientes</span><b>{pending.length}</b></div>
+          <div className="queue-head"><span>Resultados</span><b>{pageData.total}</b></div>
           {loading && <Empty icon={<LoaderCircle className="spin" />} title="Consultando avisos" text="Recuperando la bandeja desde la API…" />}
-          {!loading && !error && pending.length === 0 && <Empty icon={<ClipboardCheck />} title="Bandeja al día" text="No hay propuestas pendientes de revisión." />}
-          {pending.map(({ notice, run }) => (
-            <button key={run.triage_run_id} className={`queue-item ${selected?.run.triage_run_id === run.triage_run_id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
-              <div className="queue-top"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</span><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
-              <strong>{run.proposal.category}</strong>
+          {!loading && !error && entries.length === 0 && <Empty icon={<ClipboardCheck />} title="Sin resultados" text="No hay avisos que coincidan con los filtros activos." />}
+          {entries.map(({ notice, run }) => {
+            const final = run.review?.final_classification;
+            const category = final?.category ?? run.proposal.category;
+            const urgency = final?.urgency ?? run.proposal.urgency;
+            return <button key={run.id} className={`queue-item ${selected?.run.id === run.id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
+              <div className="queue-top"><span className={`urgency ${urgencyTone(urgency)}`}>{optionLabel(urgency)}</span><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
+              <strong>{optionLabel(category)}</strong>
               <p>{notice.text}</p>
-              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span>{run.provider}</span></footer>
-            </button>
-          ))}
+              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span>{providerNames[run.provider]}</span></footer>
+            </button>;
+          })}
+          {!loading && pageData.total > 0 && <nav className="queue-pagination" aria-label="Paginación de avisos"><button type="button" disabled={pageData.page <= 1} onClick={() => updateQuery({ page: pageData.page - 1 })}>Anterior</button><span>Página {pageData.page} de {Math.max(pageData.pages, 1)}</span><button type="button" disabled={pageData.page >= pageData.pages} onClick={() => updateQuery({ page: pageData.page + 1 })}>Siguiente</button></nav>}
         </div>
         <div className="review-stage">
-          {selected ? <ReviewPanel key={selected.run.triage_run_id} {...selected} riskMatrix={riskMatrix} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={<UserRoundCheck />} title="Selecciona una propuesta" text="Aquí podrás contrastar la observación y registrar tu decisión." />}
+          {selected ? <ReviewPanel key={selected.run.id} {...selected} riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={<UserRoundCheck />} title="Selecciona una propuesta" text="Aquí podrás contrastar la observación y registrar tu decisión." />}
         </div>
       </div>
     </section>
   );
 }
 
-function ReviewPanel({ notice, run, riskMatrix, onDone }: { notice: Notice; run: TriageRun; riskMatrix: RiskMatrixDocument | null; onDone: () => void }) {
+function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone }: { notice: NoticeRecord; run: TriageRunRecord; riskMatrix: RiskMatrixDocument | null; catalogs: CatalogsResponse | null; catalogsError: unknown; onDone: () => void }) {
   const [decision, setDecision] = useState<ReviewDecision>("approved");
   const [reviewer, setReviewer] = useState("");
   const [comment, setComment] = useState("");
@@ -361,13 +422,21 @@ function ReviewPanel({ notice, run, riskMatrix, onDone }: { notice: Notice; run:
   const [department, setDepartment] = useState(run.proposal.department);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [auditEvents, setAuditEvents] = useState<AuditEventRecord[]>([]);
+  const [auditError, setAuditError] = useState<unknown>(null);
+
+  useEffect(() => {
+    setAuditEvents([]);
+    setAuditError(null);
+    void api.getAuditEvents(notice.id).then(setAuditEvents).catch(setAuditError);
+  }, [notice.id]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await api.reviewNotice(notice.notice_id, {
+      await api.reviewNotice(notice.id, {
         expected_version: run.version,
         decision,
         reviewer: reviewer.trim(),
@@ -385,98 +454,121 @@ function ReviewPanel({ notice, run, riskMatrix, onDone }: { notice: Notice; run:
   return (
     <form className="review-panel" onSubmit={submit}>
       <div className="review-heading"><span>Propuesta original</span><small>v{run.version} · {run.provider}</small></div>
-      <h2>{run.proposal.category}</h2>
-      <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</span><span>{run.proposal.department}</span></div>
+      <h2>{optionLabel(run.proposal.category)}</h2>
+      <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span>{optionLabel(run.proposal.department)}</span></div>
       <blockquote>{run.proposal.summary}</blockquote>
       <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} />
       <div className="original-notice"><span>Observación recibida</span><p>{notice.text}</p></div>
+      <AuditTimeline notice={notice} run={run} events={auditEvents} error={auditError} />
 
-      <fieldset className="decision-picker">
-        <legend>Decisión</legend>
-        {(["approved", "modified", "rejected"] as ReviewDecision[]).map((value) => (
-          <label key={value} className={decision === value ? `selected ${value}` : ""}>
-            <input type="radio" name="decision" checked={decision === value} onChange={() => setDecision(value)} />
-            {value === "approved" ? "Aprobar" : value === "modified" ? "Corregir" : "Rechazar"}
-          </label>
-        ))}
-      </fieldset>
+      {run.status === "pending_review" ? <>
+        <fieldset className="decision-picker">
+          <legend>Decisión</legend>
+          {reviewDecisions.map((value) => (
+            <label key={value} className={decision === value ? `selected ${value}` : ""}>
+              <input type="radio" name="decision" checked={decision === value} onChange={() => setDecision(value)} />
+              {value === "approved" ? "Aprobar" : value === "modified" ? "Corregir" : "Rechazar"}
+            </label>
+          ))}
+        </fieldset>
 
-      {decision === "modified" && (
-        <div className="correction-grid">
-          <label>Categoría<select value={category} onChange={(e) => setCategory(e.target.value as Category)} required>{categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
-          <label>Urgencia<select value={urgency} onChange={(e) => setUrgency(e.target.value as Urgency)} required>{urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
-          <label>Departamento<select value={department} onChange={(e) => setDepartment(e.target.value as Department)} required>{departments.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+        {decision === "modified" && catalogs && (
+          <div className="correction-grid">
+            <label>Categoría<select value={category} onChange={(e) => setCategory(catalogValue(e.target.value, catalogs.categories))} required>{catalogs.categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+            <label>Urgencia<select value={urgency} onChange={(e) => setUrgency(catalogValue(e.target.value, catalogs.urgencies))} required>{catalogs.urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+            <label>Departamento<select value={department} onChange={(e) => setDepartment(catalogValue(e.target.value, catalogs.departments))} required>{catalogs.departments.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+          </div>
+        )}
+        {decision === "modified" && !catalogs && <StatusMessage error={catalogsError ?? new Error("Cargando catálogos de clasificación…")} />}
+        <div className="reviewer-grid">
+          <label>Técnico revisor<input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required minLength={2} placeholder="Nombre o identificador" /></label>
+          <label>Comentario<textarea value={comment} onChange={(e) => setComment(e.target.value)} required minLength={3} placeholder="Motivo breve y verificable" /></label>
         </div>
-      )}
-      <div className="reviewer-grid">
-        <label>Técnico revisor<input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required minLength={2} placeholder="Nombre o identificador" /></label>
-        <label>Comentario<textarea value={comment} onChange={(e) => setComment(e.target.value)} required minLength={3} placeholder="Motivo breve y verificable" /></label>
-      </div>
-      <StatusMessage error={error} />
-      <button className="primary-action" disabled={loading || !reviewer.trim() || !comment.trim()}>{loading ? <><LoaderCircle className="spin" /> Guardando…</> : <>Registrar decisión <Check /></>}</button>
+        <StatusMessage error={error} />
+        <button className="primary-action" disabled={loading || !reviewer.trim() || !comment.trim() || (decision === "modified" && !catalogs)}>{loading ? <><LoaderCircle className="spin" /> Guardando…</> : <>Registrar decisión <Check /></>}</button>
+      </> : <div className={`review-completed ${run.status}`}>{run.status === "rejected" ? <X /> : <Check />}<div><strong>{statusLabels[run.status]}</strong><p>{run.review?.reviewer ?? "Revisión registrada"} · {run.review?.comment ?? "Sin comentario"}</p>{run.review?.final_classification && <p>Clasificación final: {optionLabel(run.review.final_classification.category)} · {optionLabel(run.review.final_classification.urgency)} · {optionLabel(run.review.final_classification.department)}</p>}</div></div>}
     </form>
   );
 }
 
+function AuditTimeline({ notice, run, events, error }: { notice: NoticeRecord; run: TriageRunRecord; events: AuditEventRecord[]; error: unknown }) {
+  const reviewEvent = events.find((event) => event.event_type === "review_completed");
+  const final = run.review?.final_classification;
+  const changes = final ? [
+    run.proposal.category !== final.category ? `Categoría: ${optionLabel(run.proposal.category)} → ${optionLabel(final.category)}` : null,
+    run.proposal.urgency !== final.urgency ? `Urgencia: ${optionLabel(run.proposal.urgency)} → ${optionLabel(final.urgency)}` : null,
+    run.proposal.department !== final.department ? `Departamento: ${optionLabel(run.proposal.department)} → ${optionLabel(final.department)}` : null,
+  ].filter((value): value is string => value !== null) : [];
+
+  return <section className="audit-timeline" aria-label="Línea temporal de auditoría">
+    <div className="audit-title"><span>Auditoría HITL</span><strong>Línea temporal</strong></div>
+    <ol>
+      <li><time>{formatDate(notice.created_at)}</time><div><strong>Aviso recibido</strong><p>{notice.location || "Sin ubicación registrada"}</p></div></li>
+      <li><time>{formatDate(run.created_at)}</time><div><strong>{providerNames[run.provider]} propone</strong><p>{optionLabel(run.proposal.category)} · {optionLabel(run.proposal.urgency)} · {optionLabel(run.proposal.department)}</p></div></li>
+      {reviewEvent && <li><time>{formatDate(reviewEvent.created_at)}</time><div><strong>Revisado por {reviewEvent.actor || "persona técnica"}</strong><p>{reviewEvent.previous_status ? `${statusLabels[reviewEvent.previous_status]} → ` : ""}{statusLabels[reviewEvent.new_status]}</p></div></li>}
+      {changes.length > 0 && <li className="audit-change"><time>{formatDate(run.review?.created_at)}</time><div><strong>Clasificación corregida</strong>{changes.map((change) => <p key={change}>{change}</p>)}</div></li>}
+    </ol>
+    {!events.length && !error && <small>Recuperando eventos de auditoría…</small>}
+    <StatusMessage error={error} />
+  </section>;
+}
+
 function Dashboard() {
-  const [notices, setNotices] = useState<Notice[]>([]);
+  const [summary, setSummary] = useState<MetricsSummary | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void api.listNotices().then(setNotices).catch(setError).finally(() => setLoading(false));
+    void api.getMetricsSummary().then(setSummary).catch(setError).finally(() => setLoading(false));
   }, []);
 
-  const runs = notices.flatMap((notice) => notice.triage_runs);
-  const pending = runs.filter((run) => run.status === "pending_review").length;
-  const approved = runs.filter((run) => run.status === "approved").length;
-  const modified = runs.filter((run) => run.status === "modified").length;
-  const rejected = runs.filter((run) => run.status === "rejected").length;
-  const reviewed = runs.length - pending;
-  const metrics: Record<string, number> = {
-    total_notices: notices.length,
-    total: runs.length,
-    pending_review: pending,
-    approved,
-    modified,
-    rejected,
-    reviewed,
-    approval_rate: reviewed ? (approved + modified) / reviewed : 0,
-  };
-  const cards = [
-    ["Avisos procesados", metrics.total_notices ?? metrics.total ?? 0, Activity],
-    ["Pendientes", metrics.pending_review ?? metrics.pending ?? 0, Clock3],
-    ["Revisados", metrics.reviewed ?? metrics.total_reviewed ?? 0, ClipboardCheck],
-    ["Tasa de validación", `${Math.round(Number(metrics.approval_rate ?? metrics.validation_rate ?? 0) * (Number(metrics.approval_rate ?? 0) <= 1 ? 100 : 1))}%`, ShieldCheck],
-  ] as const;
+  const cards = summary ? [
+    ["Avisos procesados", summary.total_notices, Activity, "Entradas persistidas"],
+    ["IA aceptada", formatRate(summary.acceptance_rate), ShieldCheck, `${summary.approved} decisiones sin cambios`],
+    ["IA corregida", formatRate(summary.correction_rate), ClipboardCheck, `${summary.modified} correcciones humanas`],
+    ["Pendientes", summary.pending_review, Clock3, `${summary.reviewed} ya revisados`],
+  ] as const : [];
 
   return (
     <section className="page-content">
-      <PageIntro eyebrow="03 · Supervisión" title="Lectura operativa del prototipo">Métricas agregadas para vigilar el flujo, no para automatizar decisiones preventivas.</PageIntro>
+      <PageIntro eyebrow="03 · Evaluación histórica" title="Qué modelo funciona mejor, medido con datos.">Rendimiento, estabilidad, coste y acuerdo con la revisión humana a partir de ejecuciones persistidas.</PageIntro>
       <StatusMessage error={error} />
-      {loading ? <Empty icon={<LoaderCircle className="spin" />} title="Calculando indicadores" text="Consultando datos agregados…" /> : (
-        <>
+      {loading ? <Empty icon={<LoaderCircle className="spin" />} title="Calculando indicadores" text="Consultando métricas agregadas en la API…" /> : (
+        summary && <>
           <div className="metrics-grid">
-            {cards.map(([label, value, Icon], index) => <article key={label} className={`metric-card m${index + 1}`}><Icon /><span>{label}</span><strong>{value}</strong><small>Datos registrados en la API</small></article>)}
+            {cards.map(([label, value, Icon, note], index) => <article key={label} className={`metric-card m${index + 1}`}><Icon /><span>{label}</span><strong>{value}</strong><small>{note}</small></article>)}
           </div>
-          <div className="dashboard-lower">
-            <article className="work-card chart-card">
-              <div className="card-heading"><div><h2>Estado del flujo</h2><p>Distribución disponible en este momento.</p></div></div>
-              <div className="flow-bars">
-                {["pending_review", "approved", "modified", "rejected"].map((key, index) => {
-                  const value = Number(metrics[key] ?? 0);
-                  const total = Math.max(1, Number(metrics.total ?? metrics.total_notices ?? 0));
-                  return <div key={key}><span>{key.replace("pending_review", "Pendientes").replace("approved", "Aprobados").replace("modified", "Corregidos").replace("rejected", "Rechazados")}</span><i><b style={{ width: `${Math.min(100, value / total * 100)}%` }} className={`bar-${index}`} /></i><strong>{value}</strong></div>;
-                })}
-              </div>
-            </article>
-            <aside className="principle-card"><ShieldCheck /><span>Principio de control</span><h2>Propuesta ≠ decisión</h2><p>La salida del modelo permanece separada de la clasificación validada para conservar la trazabilidad.</p></aside>
+          <div className="provider-evaluation-grid">
+            {summary.providers.map((provider) => {
+              const cost = provider.mean_api_cost === null ? "—" : `${provider.mean_api_cost}${provider.api_cost_currency ? ` ${provider.api_cost_currency}` : ""}`;
+              return <article className="provider-evaluation-card work-card" key={provider.provider}>
+                <header><div className="provider-icon">{provider.provider === "local" ? <Activity /> : <Sparkles />}</div><div><span>Proveedor evaluado</span><h2>{providerNames[provider.provider]}</h2><small>{provider.models.join(" · ") || "Modelo no registrado"}</small></div><strong>{provider.runs}<small>ejecuciones</small></strong></header>
+                <div className="provider-score-grid">
+                  <div><span>Latencia media</span><strong>{formatDuration(provider.mean_latency_ms)}</strong></div>
+                  <div><span>Con reparación</span><strong>{formatRate(provider.repair_rate)}</strong></div>
+                  <div><span>Coincide humano</span><strong>{formatRate(provider.human_agreement_rate)}</strong><small>{provider.reviewed_runs} revisadas</small></div>
+                  <div><span>JSON válido</span><strong>{formatRate(provider.json_valid_rate)}</strong><small>{provider.json_valid_observations} medidas</small></div>
+                  <div><span>Tokens medios</span><strong>{provider.mean_total_tokens === null ? "—" : Math.round(provider.mean_total_tokens)}</strong><small>{provider.token_observations} medidas</small></div>
+                  <div><span>Coste API medio</span><strong>{cost}</strong><small>{provider.cost_observations} medidas</small></div>
+                </div>
+                <footer><span>Éxito <b>{formatRate(provider.success_rate)}</b></span><span>Intentos medios <b>{formatNumber(provider.mean_provider_attempts)}</b></span><span>Reparaciones medias <b>{formatNumber(provider.mean_repair_attempts)}</b></span><span>temperature <b>{provider.temperatures.join(" / ") || "—"}</b></span><span>top_p <b>{provider.top_p_values.join(" / ") || "—"}</b></span></footer>
+              </article>;
+            })}
           </div>
+          <p className="dashboard-definition"><ShieldCheck /> “Coincide humano” exige una aprobación sin cambios o coincidencia en los tres campos de una comparación revisada. Las ejecuciones incluyen avisos y comparaciones; los indicadores superiores corresponden solo al flujo de avisos.</p>
         </>
       )}
     </section>
   );
 }
+
+const formatDuration = (milliseconds: number | null) => milliseconds === null
+  ? "—"
+  : milliseconds >= 1000
+    ? `${(milliseconds / 1000).toFixed(2)} s`
+    : `${Math.round(milliseconds)} ms`;
+
+const formatNumber = (value: number | null) => value === null ? "—" : value.toFixed(2);
 
 function ProposalExplanation({
   proposal,
@@ -550,22 +642,29 @@ function MatrixView({ matrix, error }: { matrix: RiskMatrixDocument | null; erro
   );
 }
 
-function Comparison({ riskMatrix }: { riskMatrix: RiskMatrixDocument | null }) {
+function Comparison({ riskMatrix, catalogs, catalogsError }: { riskMatrix: RiskMatrixDocument | null; catalogs: CatalogsResponse | null; catalogsError: unknown }) {
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
   const [result, setResult] = useState<ComparisonResponse | null>(null);
+  const [humanReview, setHumanReview] = useState<ComparisonReviewRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoading(true); setError(null); setResult(null);
-    try { setResult(await api.compare(text.trim(), location.trim() || null)); }
+    setLoading(true); setError(null); setResult(null); setHumanReview(null);
+    try {
+      const comparison = await api.compare(text.trim(), location.trim() || null);
+      setResult(comparison);
+      setHumanReview(comparison.review);
+    }
     catch (caught) { setError(caught); }
     finally { setLoading(false); }
   };
 
   const runs = result?.results ?? [];
+  const localResult = runs.find((item) => item.provider === "local");
+  const externalResult = runs.find((item) => item.provider === "external");
   return (
     <section className="page-content">
       <PageIntro eyebrow="05 · Evaluación" title="Mismo caso. Dos proveedores. Una comparación justa.">Ejecuta el caso sintético con los dos motores y contrasta calidad, latencia, tokens y coste.</PageIntro>
@@ -576,19 +675,169 @@ function Comparison({ riskMatrix }: { riskMatrix: RiskMatrixDocument | null }) {
       </form>
       <StatusMessage error={error} />
       {result && (
-        <div className="comparison-grid">
-          {runs.map((raw, index) => {
-            if (!raw.result) {
-              return <article className="comparison-card" key={raw.provider}><header><span>{index === 0 ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{raw.provider}</h2></div></header><div className="message error" role="alert"><AlertTriangle /><div><strong>No se obtuvo una propuesta válida.</strong><small>Código: {raw.error_code ?? "provider_error"}</small></div></div></article>;
-            }
-            const run = normalizeTriageResponse(raw);
-            const metrics = raw.metrics;
-            const cost = metrics.api_cost === null ? "—" : `${metrics.api_cost}${metrics.api_cost_currency ? ` ${metrics.api_cost_currency}` : ""}`;
-            return <article className="comparison-card" key={raw.provider}><header><span>{index === 0 ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{run.provider}</h2></div></header><div className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{run.proposal.urgency}</div><h3>{optionLabel(run.proposal.category)}</h3><p>{run.proposal.summary}</p><p className="comparison-department"><strong>Departamento:</strong> {optionLabel(run.proposal.department)}</p><ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} compact /><dl><div><dt>Latencia</dt><dd>{metrics.latency_ms} ms</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{cost}</dd></div></dl></article>;
-          })}
-        </div>
+        <>
+          <div className="comparison-grid enriched">
+            {localResult && <ProviderComparisonCard item={localResult} riskMatrix={riskMatrix} />}
+            <ComparisonAnalysis results={runs} humanReview={humanReview} />
+            {externalResult && <ProviderComparisonCard item={externalResult} riskMatrix={riskMatrix} />}
+          </div>
+          <ComparisonHumanReview comparison={result} review={humanReview} catalogs={catalogs} catalogsError={catalogsError} onReviewed={setHumanReview} />
+        </>
       )}
       {!result && !loading && <div className="comparison-placeholder"><div><Activity /><span className="bridge" /><Sparkles /></div><h2>Preparado para comparar</h2><p>El resultado no crea dos avisos: conserva una única evaluación reproducible del mismo caso.</p></div>}
+      <EvaluationBenchmark />
+    </section>
+  );
+}
+
+function ProviderComparisonCard({ item, riskMatrix }: { item: ComparisonProviderResult; riskMatrix: RiskMatrixDocument | null }) {
+  if (!item.result) {
+    return <article className="comparison-card" key={item.provider}><header><span>{item.provider === "local" ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{providerNames[item.provider]}</h2></div></header><div className="message error" role="alert"><AlertTriangle /><div><strong>No se obtuvo una propuesta válida.</strong><small>Código: {item.error_code ?? "provider_error"}</small></div></div></article>;
+  }
+  const proposal = item.result;
+  const metrics = item.metrics;
+  const cost = metrics.api_cost === null ? "—" : `${metrics.api_cost}${metrics.api_cost_currency ? ` ${metrics.api_cost_currency}` : ""}`;
+  return <article className="comparison-card"><header><span>{item.provider === "local" ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{providerNames[item.provider]}</h2><em>{metrics.model ?? "Modelo no registrado"}</em></div></header><div className={`urgency ${urgencyTone(proposal.urgency)}`}>{optionLabel(proposal.urgency)}</div><h3>{optionLabel(proposal.category)}</h3><p>{proposal.summary}</p><p className="comparison-department"><strong>Departamento:</strong> {optionLabel(proposal.department)}</p><ProposalExplanation proposal={proposal} riskMatrix={riskMatrix} compact /><dl><div><dt>Latencia</dt><dd>{formatDuration(metrics.latency_ms)}</dd></div><div><dt>Reparaciones</dt><dd>{metrics.repair_attempts}</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{cost}</dd></div></dl></article>;
+}
+
+function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProviderResult[]; humanReview: ComparisonReviewRecord | null }) {
+  const local = results.find((item) => item.provider === "local");
+  const external = results.find((item) => item.provider === "external");
+  const both = local?.result && external?.result ? { local: local.result, external: external.result } : null;
+  const fields = both ? [
+    ["Categoría", both.local.category === both.external.category],
+    ["Urgencia", both.local.urgency === both.external.urgency],
+    ["Departamento", both.local.department === both.external.department],
+  ] as const : [];
+  const faster = local && external
+    ? local.metrics.latency_ms <= external.metrics.latency_ms
+      ? { provider: "local" as const, difference: external.metrics.latency_ms - local.metrics.latency_ms }
+      : { provider: "external" as const, difference: local.metrics.latency_ms - external.metrics.latency_ms }
+    : null;
+  const fewerRepairs = local && external
+    ? local.metrics.repair_attempts === external.metrics.repair_attempts
+      ? null
+      : local.metrics.repair_attempts < external.metrics.repair_attempts ? "local" as const : "external" as const
+    : null;
+
+  return <article className="comparison-analysis">
+    <header><GitCompareArrows /><div><small>Comparación</small><h2>Lectura directa</h2></div></header>
+    <div className="agreement-list">
+      {fields.length ? fields.map(([label, matches]) => <div key={label}><span>{label}</span><strong className={matches ? "match" : "mismatch"}>{matches ? "✓ Coinciden" : "⚠ Discrepan"}</strong></div>) : <p>No hay dos resultados válidos para contrastar.</p>}
+    </div>
+    <div className="comparison-winners">
+      <div><span>Más rápido</span><strong>{faster ? providerNames[faster.provider] : "—"}</strong><small>{faster ? `${formatDuration(faster.difference)} de diferencia` : "Sin datos"}</small></div>
+      <div><span>Menos reparaciones</span><strong>{fewerRepairs ? providerNames[fewerRepairs] : "Empate"}</strong><small>{local?.metrics.repair_attempts ?? "—"} vs {external?.metrics.repair_attempts ?? "—"}</small></div>
+      <div><span>Coste API</span><small>Ollama <b>{local?.metrics.api_cost ?? "—"}</b></small><small>Gemini <b>{external?.metrics.api_cost ?? "—"} {external?.metrics.api_cost_currency ?? ""}</b></small></div>
+    </div>
+    {humanReview && <div className="human-verdict"><span>Decisión humana</span><strong>{optionLabel(humanReview.category)} · {optionLabel(humanReview.urgency)}</strong>{results.map((item) => {
+      const matches = item.result ? [item.result.category === humanReview.category, item.result.urgency === humanReview.urgency, item.result.department === humanReview.department].filter(Boolean).length : 0;
+      return <div key={item.provider}><span>{providerNames[item.provider]}</span><b className={matches === 3 ? "match" : "mismatch"}>{matches === 3 ? "✓ 3/3" : `${matches}/3`}</b></div>;
+    })}</div>}
+  </article>;
+}
+
+function ComparisonHumanReview({ comparison, review, catalogs, catalogsError, onReviewed }: { comparison: ComparisonResponse; review: ComparisonReviewRecord | null; catalogs: CatalogsResponse | null; catalogsError: unknown; onReviewed: (value: ComparisonReviewRecord) => void }) {
+  const seed = comparison.results.find((item) => item.result !== null)?.result;
+  const [category, setCategory] = useState<Category>(seed?.category ?? "otros");
+  const [urgency, setUrgency] = useState<Urgency>(seed?.urgency ?? "media");
+  const [department, setDepartment] = useState<Department>(seed?.department ?? "prevencion");
+  const [reviewer, setReviewer] = useState("");
+  const [comment, setComment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  if (review) return <div className="comparison-review-saved"><Check /><div><strong>Referencia humana registrada</strong><p>{optionLabel(review.category)} · {optionLabel(review.urgency)} · {optionLabel(review.department)}</p><small>{review.reviewer}: {review.comment}</small></div></div>;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLoading(true); setError(null);
+    try { onReviewed(await api.reviewComparison(comparison.comparison_id, { category, urgency, department, reviewer: reviewer.trim(), comment: comment.trim() })); }
+    catch (caught) { setError(caught); }
+    finally { setLoading(false); }
+  };
+
+  return <form className="comparison-review-form work-card" onSubmit={submit}>
+    <div className="card-heading"><div className="step-number">H</div><div><h2>Añadir decisión humana de referencia</h2><p>Permite medir cuál de los dos modelos coincide mejor en este caso.</p></div></div>
+    {catalogs ? <div className="comparison-review-fields">
+      <label>Categoría<select value={category} onChange={(event) => setCategory(catalogValue(event.target.value, catalogs.categories))}>{catalogs.categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+      <label>Urgencia<select value={urgency} onChange={(event) => setUrgency(catalogValue(event.target.value, catalogs.urgencies))}>{catalogs.urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+      <label>Departamento<select value={department} onChange={(event) => setDepartment(catalogValue(event.target.value, catalogs.departments))}>{catalogs.departments.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
+      <label>Persona revisora<input value={reviewer} onChange={(event) => setReviewer(event.target.value)} minLength={1} maxLength={200} required /></label>
+      <label>Comentario<textarea value={comment} onChange={(event) => setComment(event.target.value)} minLength={1} maxLength={2000} required /></label>
+    </div> : <StatusMessage error={catalogsError ?? new Error("Cargando catálogos de clasificación…")} />}
+    <StatusMessage error={error} />
+    <button className="primary-action" disabled={!catalogs || loading || !reviewer.trim() || !comment.trim()}>{loading ? <><LoaderCircle className="spin" /> Guardando referencia…</> : <><UserRoundCheck /> Registrar referencia humana</>}</button>
+  </form>;
+}
+
+const formatRate = (value: number | null) => value === null ? "—" : `${Math.round(value * 100)}%`;
+
+function EvaluationBenchmark() {
+  const [report, setReport] = useState<EvaluationReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  const run = async () => {
+    setLoading(true);
+    setError(null);
+    try { setReport(await api.runEvaluation()); }
+    catch (caught) { setError(caught); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <section className="benchmark-panel work-card" aria-labelledby="benchmark-title">
+      <div className="benchmark-heading">
+        <div className="benchmark-icon"><BarChart3 /></div>
+        <div>
+          <span>Benchmark etiquetado</span>
+          <h2 id="benchmark-title">Calidad de clasificación medible</h2>
+          <p>14 casos sintéticos × 2 proveedores. La exactitud se calcula contra categoría, urgencia y departamento esperados.</p>
+        </div>
+        <button className="secondary-action" type="button" onClick={run} disabled={loading}>
+          {loading ? <><LoaderCircle className="spin" /> Ejecutando 28 inferencias…</> : <><RefreshCw /> Ejecutar benchmark</>}
+        </button>
+      </div>
+      <StatusMessage error={error} />
+      {report && (
+        <>
+          <div className="benchmark-meta">
+            <span>Dataset {report.dataset_version}</span>
+            <span>Generado {formatDate(report.generated_at)}</span>
+          </div>
+          <div className="benchmark-grid">
+            {report.summaries.map((summary) => {
+              const rates = [summary.category_accuracy, summary.urgency_accuracy, summary.department_accuracy].filter((value): value is number => value !== null);
+              const overall = rates.length ? rates.reduce((total, value) => total + value, 0) / rates.length : null;
+              const cost = summary.mean_api_cost === null ? "—" : `${summary.mean_api_cost}${summary.api_cost_currency ? ` ${summary.api_cost_currency}` : ""}`;
+              return (
+                <article className="benchmark-card" key={summary.provider}>
+                  <header><div><small>Proveedor</small><h3>{providerNames[summary.provider]}</h3></div><strong>{formatRate(overall)}<small>calidad media</small></strong></header>
+                  <div className="quality-bars">
+                    {[
+                      ["Categoría", summary.category_accuracy],
+                      ["Urgencia", summary.urgency_accuracy],
+                      ["Departamento", summary.department_accuracy],
+                    ].map(([label, raw]) => {
+                      const value = typeof raw === "number" ? raw : null;
+                      return <div key={String(label)}><span>{label}</span><i><b style={{ width: `${(value ?? 0) * 100}%` }} /></i><strong>{formatRate(value)}</strong></div>;
+                    })}
+                  </div>
+                  <dl>
+                    <div><dt>Casos</dt><dd>{summary.cases}</dd></div>
+                    <div><dt>JSON válido</dt><dd>{formatRate(summary.json_valid_rate)}</dd></div>
+                    <div><dt>Latencia media</dt><dd>{summary.mean_latency_ms === null ? "—" : `${Math.round(summary.mean_latency_ms)} ms`}</dd></div>
+                    <div><dt>Coste medio</dt><dd>{cost}</dd></div>
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+          <p className="benchmark-disclaimer"><ShieldCheck /> {report.disclaimer}</p>
+        </>
+      )}
+      {!report && !loading && !error && <p className="benchmark-empty">El benchmark se ejecuta bajo demanda porque consulta ambos modelos y puede consumir tiempo y cuota de la API externa.</p>}
     </section>
   );
 }

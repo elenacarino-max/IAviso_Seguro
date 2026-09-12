@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, normalizeTriageResponse } from "./api";
+import { api } from "./api";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -61,45 +61,101 @@ describe("cliente de FastAPI", () => {
     );
   });
 
-  it("normaliza los identificadores y la propuesta devueltos por el backend", () => {
-    expect(normalizeTriageResponse({
-      id: "r-1",
-      provider: "local",
-      status: "pending_review",
-      version: 0,
-      category: "caidas",
-      urgency: "alta",
-      summary: "Cable sin proteger.",
-      department: "mantenimiento",
-    })).toMatchObject({
-      triage_run_id: "r-1",
-      proposal: { category: "caidas", urgency: "alta", department: "mantenimiento" },
-    });
+  it("consulta los catálogos cerrados mediante la API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({
+        categories: ["riesgo_electrico"],
+        urgencies: ["alta"],
+        departments: ["mantenimiento"],
+      }), { status: 200 }),
+    );
+
+    await api.getCatalogs();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/catalogs",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
   });
 
-  it("normaliza la propuesta anidada de una comparación", () => {
-    expect(normalizeTriageResponse({
-      provider: "external",
-      result: {
-        category: "incendio",
-        urgency: "critica",
-        summary: "Humo visible junto a salida requiere revisión técnica inmediata preventiva.",
-        department: "seguridad",
-        justification: "Caso sintético.",
-      },
-      metrics: {
-        latency_ms: 25,
-        total_tokens: 42,
-        api_cost: "0.001",
-        api_cost_currency: "USD",
-      },
-    })).toMatchObject({
-      provider: "external",
-      proposal: {
-        category: "incendio",
-        urgency: "critica",
-        department: "seguridad",
-      },
+  it("envía filtros tipados y paginación a la bandeja", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ items: [], page: 2, limit: 20, total: 0, pages: 0 }), { status: 200 }),
+    );
+
+    await api.listNotices({
+      search: "cuadro eléctrico",
+      status: "pending_review",
+      urgency: "alta",
+      category: "riesgo_electrico",
+      provider: "local",
+      page: 2,
+      limit: 20,
     });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/notices?search=cuadro+el%C3%A9ctrico&status=pending_review&urgency=alta&provider=local&category=riesgo_electrico&page=2&limit=20",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
   });
+
+  it("consulta la auditoría de un aviso", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify([]), { status: 200 }),
+    );
+
+    await api.getAuditEvents("notice/1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/notices/notice%2F1/audit-events",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("ejecuta el benchmark cuantitativo mediante la API", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ dataset_version: "1.0.0", summaries: [] }), { status: 200 }),
+    );
+
+    await api.runEvaluation();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/evaluations",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("consulta el resumen histórico de métricas", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ total_notices: 0, providers: [] }), { status: 200 }),
+    );
+
+    await api.getMetricsSummary();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/metrics/summary",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("registra una referencia humana para una comparación", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ id: "review-1" }), { status: 200 }),
+    );
+    const input = {
+      category: "incendio" as const,
+      urgency: "critica" as const,
+      department: "seguridad" as const,
+      reviewer: "Técnica demo",
+      comment: "Referencia verificada.",
+    };
+
+    await api.reviewComparison("comparison-1", input);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/comparisons/comparison-1/review",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
+    );
+  });
+
 });
