@@ -37,7 +37,8 @@ $FrontendRoot = Join-Path $ProjectRoot "frontend-react"
 $EnvPath = Join-Path $ProjectRoot ".env"
 $EnvExamplePath = Join-Path $ProjectRoot ".env.example"
 $LogRoot = Join-Path $ProjectRoot "data\local"
-$FrontendUrl = "http://127.0.0.1:5173"
+$FrontendPort = 5173
+$FrontendUrl = "http://127.0.0.1:$FrontendPort"
 $OwnedProcesses = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
 $ProcessJob = [IntPtr]::Zero
 
@@ -83,6 +84,65 @@ function Test-Endpoint {
     catch {
         return $false
     }
+}
+
+function Test-IAvisoBackend {
+    param([string]$Url)
+
+    try {
+        $Health = Invoke-RestMethod -Uri "$Url/health" -TimeoutSec 3
+        $ServiceIds = @($Health.services | ForEach-Object { $_.id })
+        return ($Health.status -eq "ok") -and ($ServiceIds -contains "api")
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-TcpPortAvailable {
+    param([int]$Port)
+
+    $Client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $Connection = $Client.ConnectAsync("127.0.0.1", $Port)
+        $Connected = $Connection.Wait(500) -and $Client.Connected
+        return -not $Connected
+    }
+    catch {
+        return $true
+    }
+    finally {
+        $Client.Dispose()
+    }
+}
+
+function Select-ApiBaseUrl {
+    param([string]$ConfiguredUrl)
+
+    if (Test-IAvisoBackend -Url $ConfiguredUrl) {
+        return $ConfiguredUrl
+    }
+
+    $ConfiguredUri = [Uri]$ConfiguredUrl
+    if (Test-TcpPortAvailable -Port $ConfiguredUri.Port) {
+        return $ConfiguredUrl
+    }
+
+    # No se detiene el proceso ajeno que ocupa el puerto configurado. Se busca
+    # uno local libre y Vite recibirá este destino solo para la sesión actual.
+    foreach ($CandidatePort in (($ConfiguredUri.Port + 1)..($ConfiguredUri.Port + 20))) {
+        if (Test-TcpPortAvailable -Port $CandidatePort) {
+            $Builder = [UriBuilder]::new($ConfiguredUri)
+            $Builder.Port = $CandidatePort
+            $Builder.Path = ""
+            $Builder.Query = ""
+            $Builder.Fragment = ""
+            $SelectedUrl = $Builder.Uri.GetLeftPart([System.UriPartial]::Authority)
+            Write-Warning "El puerto $($ConfiguredUri.Port) esta ocupado por otro servicio. FastAPI usara $SelectedUrl."
+            return $SelectedUrl
+        }
+    }
+    throw "No se encontro un puerto libre para FastAPI."
 }
 
 function Get-Sha256 {
@@ -433,7 +493,8 @@ try {
     Normalize-PathEnvironment
     $ProcessJob = Initialize-ProcessJob
 
-    $ApiBaseUrl = (Get-DotEnvValue -Name "API_BASE_URL" -Default "http://127.0.0.1:8000").TrimEnd("/")
+    $ConfiguredApiBaseUrl = (Get-DotEnvValue -Name "API_BASE_URL" -Default "http://127.0.0.1:8000").TrimEnd("/")
+    $ApiBaseUrl = Select-ApiBaseUrl -ConfiguredUrl $ConfiguredApiBaseUrl
     $OllamaBaseUrl = (Get-DotEnvValue -Name "OLLAMA_BASE_URL" -Default "http://127.0.0.1:11434").TrimEnd("/")
     $LocalModel = Get-DotEnvValue -Name "LOCAL_MODEL" -Default "llama3.2:3b"
     $ApiUri = [Uri]$ApiBaseUrl
@@ -473,7 +534,7 @@ try {
     }
 
     $BackendProcess = $null
-    if (-not (Test-Endpoint -Url "$ApiBaseUrl/health")) {
+    if (-not (Test-IAvisoBackend -Url $ApiBaseUrl)) {
         Write-Step "Iniciando FastAPI"
         $BackendArguments = @(
             "-m", "uvicorn", "backend.app.main:app",
@@ -486,9 +547,27 @@ try {
             Show-LogTail -Paths @($BackendOutLog, $BackendErrorLog)
             throw "FastAPI no respondio en $ApiBaseUrl."
         }
+        if (-not (Test-IAvisoBackend -Url $ApiBaseUrl)) {
+            Show-LogTail -Paths @($BackendOutLog, $BackendErrorLog)
+            throw "El proceso de FastAPI no expone el contrato de salud esperado."
+        }
     }
     else {
         Write-Host "FastAPI ya estaba disponible en $ApiBaseUrl." -ForegroundColor DarkGray
+    }
+
+    if (
+        (-not (Test-TcpPortAvailable -Port $FrontendPort)) -and
+        (-not (Test-IAvisoBackend -Url $FrontendUrl))
+    ) {
+        foreach ($CandidatePort in (($FrontendPort + 1)..($FrontendPort + 20))) {
+            if (Test-TcpPortAvailable -Port $CandidatePort) {
+                Write-Warning "El puerto $FrontendPort contiene una interfaz antigua o ajena. React usara http://127.0.0.1:$CandidatePort."
+                $FrontendPort = $CandidatePort
+                $FrontendUrl = "http://127.0.0.1:$FrontendPort"
+                break
+            }
+        }
     }
 
     $FrontendProcess = $null
@@ -502,7 +581,7 @@ try {
         $FrontendArguments = @(
             $QuotedViteCli,
             "--host", "127.0.0.1",
-            "--port", "5173",
+            "--port", $FrontendPort.ToString(),
             "--strictPort"
         )
         $FrontendProcess = Start-Process -FilePath $FrontendTools.NodePath -ArgumentList $FrontendArguments -WorkingDirectory $FrontendRoot -WindowStyle Hidden -RedirectStandardOutput $FrontendOutLog -RedirectStandardError $FrontendErrorLog -PassThru
@@ -514,6 +593,10 @@ try {
     }
     else {
         Write-Host "React ya estaba disponible en $FrontendUrl." -ForegroundColor DarkGray
+    }
+    if (-not (Test-IAvisoBackend -Url $FrontendUrl)) {
+        Show-LogTail -Paths @($FrontendOutLog, $FrontendErrorLog)
+        throw "React no puede consultar el contrato de salud de FastAPI mediante su proxy."
     }
 
     Write-Host ""

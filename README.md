@@ -89,6 +89,8 @@ bloqueo, inicia Ollama, prepara el modelo configurado, levanta FastAPI y React y
 abre la aplicación. Al pulsar `Ctrl+C` detiene únicamente los procesos que él
 haya iniciado. Las opciones `-NoBrowser` y `-SkipInstall` permiten omitir la
 apertura del navegador o la instalación automática.
+Si los puertos configurados contienen una versión antigua u otro servicio, el
+lanzador elige puertos locales libres y muestra las direcciones utilizadas.
 Los diagnósticos de arranque quedan en `data/local/*.log`, que no se versiona.
 
 Python 3.11 o superior. Desde la raíz, en PowerShell:
