@@ -75,6 +75,22 @@ docs/           Análisis, arquitectura y plan de trabajo
 
 ## Preparación del entorno
 
+### Arranque con un solo comando
+
+En Windows, desde la raíz del proyecto:
+
+```powershell
+.\start.ps1
+```
+
+También se puede ejecutar `start.bat` con doble clic. El lanzador crea `.env`
+y `.venv` si faltan, sincroniza dependencias cuando cambian sus archivos de
+bloqueo, inicia Ollama, prepara el modelo configurado, levanta FastAPI y React y
+abre la aplicación. Al pulsar `Ctrl+C` detiene únicamente los procesos que él
+haya iniciado. Las opciones `-NoBrowser` y `-SkipInstall` permiten omitir la
+apertura del navegador o la instalación automática.
+Los diagnósticos de arranque quedan en `data/local/*.log`, que no se versiona.
+
 Python 3.11 o superior. Desde la raíz, en PowerShell:
 
 ```powershell
