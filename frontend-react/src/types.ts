@@ -115,6 +115,31 @@ export interface KnowledgeBaseSummary {
   sources: KnowledgeSourceSummary[];
 }
 
+export type RedactionType = "EMAIL" | "PHONE" | "DNI_NIE" | "IBAN";
+
+export interface PrivacyMetadata {
+  redacted: boolean;
+  redaction_count: number;
+  redaction_types: RedactionType[];
+}
+
+export interface SimilarityMatch {
+  notice_id: string;
+  score: number;
+  same_location: boolean;
+  location: string | null;
+  created_at: string;
+  category: Category;
+  urgency: Urgency;
+}
+
+export interface SimilarityResult {
+  available: boolean;
+  has_similar: boolean;
+  match_count: number;
+  matches: SimilarityMatch[];
+}
+
 export interface TriageProposalResponse extends TriageProposal {
   notice_id: string;
   triage_run_id: string;
@@ -124,6 +149,8 @@ export interface TriageProposalResponse extends TriageProposal {
   model: string | null;
   created_at: string;
   metrics: ExecutionMetrics;
+  privacy: PrivacyMetadata;
+  similarity: SimilarityResult;
 }
 
 export interface ClassificationDecision {
@@ -151,6 +178,7 @@ export interface TriageRunRecord {
   proposal: TriageProposal;
   created_at: string;
   metrics: ExecutionMetrics | null;
+  similarity: SimilarityResult;
   review: ReviewRecord | null;
 }
 
@@ -225,6 +253,7 @@ export interface ComparisonResponse {
   created_at: string;
   results: ComparisonProviderResult[];
   review: ComparisonReviewRecord | null;
+  privacy: PrivacyMetadata;
 }
 
 export interface ComparisonReviewInput {

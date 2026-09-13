@@ -26,11 +26,18 @@ from .metrics import (
     ProviderMetricsSummary,
     ProviderEvaluationSummary,
 )
+from .privacy import PrivacyMetadata, PrivacyResult, RedactionType
 from .risk_matrix import (
     RiskMatrixDocument,
     RiskMatrixObservation,
     RiskMatrixQuery,
     RiskMatrixRule,
+)
+from .similarity import (
+    NoticeEmbedding,
+    SimilarityMatch,
+    SimilarityResult,
+    StoredNoticeEmbedding,
 )
 from .triage import TriageRequest, TriageResult
 from .workflow import (
@@ -73,10 +80,13 @@ __all__ = [
     "KnowledgeEvidence",
     "KnowledgeSourceSummary",
     "NoticeRecord",
+    "NoticeEmbedding",
     "NoticePage",
     "MetricsSummary",
     "ProposalStatus",
     "PricingReference",
+    "PrivacyMetadata",
+    "PrivacyResult",
     "Provider",
     "ProviderMetricsSummary",
     "ProviderEvaluationSummary",
@@ -84,6 +94,7 @@ __all__ = [
     "ReviewRecord",
     "ReviewRequest",
     "ReviewResponse",
+    "RedactionType",
     "RiskMatrixDocument",
     "RiskMatrixObservation",
     "RiskMatrixQuery",
@@ -91,6 +102,9 @@ __all__ = [
     "ServiceHealth",
     "ServiceId",
     "ServiceStatus",
+    "SimilarityMatch",
+    "SimilarityResult",
+    "StoredNoticeEmbedding",
     "TriageProposalResponse",
     "TriageRequest",
     "TriageResult",

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     llm_retry_max_seconds: float = Field(default=8, ge=0, le=300)
     ollama_base_url: AnyHttpUrl = "http://127.0.0.1:11434"
     local_model: str = ""
+    embedding_enabled: bool = False
+    embedding_model: str = "nomic-embed-text"
+    embedding_threshold: float = Field(default=0.78, ge=0, le=1)
+    embedding_top_k: int = Field(default=3, ge=1, le=10)
+    embedding_timeout_seconds: float = Field(default=10, gt=0, le=60)
     llm_timeout_seconds: float = Field(default=30, gt=0, le=300)
     health_check_timeout_seconds: float = Field(default=2, gt=0, le=10)
     ollama_temperature: float = Field(default=0, ge=0, le=2)
@@ -51,6 +56,10 @@ class Settings(BaseSettings):
         if self.llm_retry_base_seconds > self.llm_retry_max_seconds:
             raise ValueError(
                 "LLM_RETRY_BASE_SECONDS no puede superar LLM_RETRY_MAX_SECONDS."
+            )
+        if self.embedding_enabled and not self.embedding_model.strip():
+            raise ValueError(
+                "EMBEDDING_MODEL es obligatorio cuando EMBEDDING_ENABLED está activo."
             )
         return self
 

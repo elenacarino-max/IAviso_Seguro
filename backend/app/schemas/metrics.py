@@ -17,6 +17,7 @@ from pydantic import (
 from .catalogs import Category, Department, Provider, Urgency
 from .errors import ErrorCode
 from .knowledge import KnowledgeEvidence
+from .privacy import PrivacyMetadata
 from .triage import LocationText, NoticeText, TriageResult
 
 
@@ -114,6 +115,7 @@ class ComparisonResponse(MetricsContract):
     created_at: datetime
     results: tuple[ComparisonProviderResult, ...]
     review: ComparisonReviewRecord | None = None
+    privacy: PrivacyMetadata = PrivacyMetadata()
 
     @model_validator(mode="after")
     def require_both_providers(self):

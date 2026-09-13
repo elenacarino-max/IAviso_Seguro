@@ -15,11 +15,17 @@ from backend.app.schemas import (
     ComparisonResponse,
     TriageRequest,
 )
-from backend.app.services import MetricsService, TriageService, error_code_for
+from backend.app.services import (
+    MetricsService,
+    PrivacyService,
+    TriageService,
+    error_code_for,
+)
 
 from .routes_triage import (
     get_metrics_service,
     get_notice_repository,
+    get_privacy_service,
     get_triage_service,
 )
 
@@ -31,6 +37,7 @@ def create_comparison(
     payload: ComparisonRequest,
     request: Request,
     service: Annotated[TriageService, Depends(get_triage_service)],
+    privacy_service: Annotated[PrivacyService, Depends(get_privacy_service)],
     metrics_service: Annotated[MetricsService, Depends(get_metrics_service)],
     repository: Annotated[
         SQLiteNoticeRepository,
@@ -38,11 +45,21 @@ def create_comparison(
     ],
 ) -> ComparisonResponse:
     request_id = request.state.request_id
+    sanitized_notice = privacy_service.sanitize_notice(
+        payload.text,
+        payload.location,
+    )
+    sanitized_payload = payload.model_copy(
+        update={
+            "text": sanitized_notice.text,
+            "location": sanitized_notice.location,
+        }
+    )
 
     def execute_provider(provider: str) -> ComparisonProviderResult:
         triage_request = TriageRequest(
-            text=payload.text,
-            location=payload.location,
+            text=sanitized_payload.text,
+            location=sanitized_payload.location,
             provider=provider,
         )
         execution = service.execute(
@@ -75,7 +92,8 @@ def create_comparison(
         # La lectura respeta el orden público local/external aunque cada futuro
         # termine en un instante distinto; así la API y la interfaz son estables.
         results = tuple(futures[provider].result() for provider in providers)
-    return repository.create_comparison(payload, results)
+    response = repository.create_comparison(sanitized_payload, results)
+    return response.model_copy(update={"privacy": sanitized_notice.privacy})
 
 
 @router.post(

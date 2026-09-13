@@ -19,6 +19,9 @@ técnica conserva siempre la decisión final.
 - Ejecutar un benchmark sintético y consultar métricas históricas por modelo.
 - Ver la regla de matriz y las fuentes RAG realmente consultadas.
 - Supervisar FastAPI, Ollama, Gemini y SQLite desde la barra lateral.
+- Anonimizar PII conocida antes de consultar modelos o guardar el aviso.
+- Detectar posibles riesgos recurrentes mediante embeddings locales de avisos
+  ya anonimizados.
 
 Las propuestas, revisiones, evidencias y métricas se conservan en SQLite.
 GitHub Actions ejecuta las pruebas de backend y frontend y compila la SPA en
@@ -46,7 +49,7 @@ backend/app/
   api/           Rutas y respuestas HTTP
   core/          Configuración y observabilidad
   schemas/       Contratos de entrada y salida
-  services/      Triaje, recuperación, telemetría y evaluación reproducible
+  services/      Privacidad, triaje, recuperación, telemetría y evaluación
   providers/     Adaptadores local y externo
   tools/         Consulta de la matriz de riesgos
   prompts/       Instrucciones y ejemplos versionados
@@ -102,6 +105,26 @@ ollama pull llama3.2:3b
 # En otra terminal, solo si Ollama no se inició como aplicación:
 ollama serve
 ```
+
+La detección opcional de avisos similares usa un modelo distinto, también local.
+La aplicación no lo descarga automáticamente. Para habilitarla, prepáralo de
+forma explícita y ajusta `.env`:
+
+```powershell
+ollama pull nomic-embed-text
+```
+
+```dotenv
+EMBEDDING_ENABLED=true
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_THRESHOLD=0.78
+EMBEDDING_TOP_K=3
+EMBEDDING_TIMEOUT_SECONDS=10
+```
+
+`nomic-embed-text` es el valor de ejemplo, no un nombre fijado en la lógica.
+Con `EMBEDDING_ENABLED=false` el triaje funciona sin generar ni consultar
+vectores.
 
 Las dependencias están fijadas en `requirements-lock.txt` y se han instalado y
 probado conjuntamente en un entorno limpio. Para ejecutar todas las pruebas desde
@@ -209,6 +232,15 @@ Variables del proveedor local:
 - `LLM_TIMEOUT_SECONDS`: tiempo máximo de cada llamada.
 - `OLLAMA_TEMPERATURE` y `OLLAMA_TOP_P`: parámetros de muestreo validados.
 
+Variables de similitud semántica:
+
+- `EMBEDDING_ENABLED`: activa la capacidad opcional; por defecto está desactivada.
+- `EMBEDDING_MODEL`: modelo local de Ollama preparado manualmente.
+- `EMBEDDING_THRESHOLD`: coseno mínimo para considerar un aviso relacionado,
+  entre 0 y 1.
+- `EMBEDDING_TOP_K`: máximo de coincidencias devueltas, entre 1 y 10.
+- `EMBEDDING_TIMEOUT_SECONDS`: límite independiente para generar el vector.
+
 Variables del proveedor externo:
 
 - `EXTERNAL_API_BASE_URL`: base de la API REST de Gemini.
@@ -235,6 +267,65 @@ la disponibilidad básica de la API en un error HTTP.
 
 ## Prompts, herramienta y seguridad
 
+Antes de que `POST /api/v1/triage` o `POST /api/v1/comparisons` invoquen el
+servicio de triaje, un filtro local y determinista anonimiza el texto del aviso
+y la ubicación libre opcional. El MVP cubre correos electrónicos, teléfonos
+españoles, DNI/NIE e IBAN válidos y los sustituye por `[EMAIL]`, `[PHONE]`,
+`[DNI_NIE]` e `[IBAN]`. No utiliza
+Gemini, Ollama ni ninguna API externa para detectar estos datos.
+
+Solo los campos anonimizados llegan a proveedores, matriz, recuperación RAG,
+métricas y SQLite. Los valores detectados no se conservan, no se devuelven y no
+se incorporan a logs. La respuesta incluye únicamente un resumen seguro:
+
+```json
+{
+  "privacy": {
+    "redacted": true,
+    "redaction_count": 2,
+    "redaction_types": ["EMAIL", "DNI_NIE"]
+  }
+}
+```
+
+Este filtro no intenta reconocer nombres propios: hacerlo mediante heurísticas
+simples produciría falsos positivos y falsas garantías. Por eso la interfaz
+mantiene la recomendación de no introducir nombres ni ningún dato personal. La
+anonimización es una defensa adicional del MVP, no una solución legal completa
+de prevención de pérdida de datos.
+
+## Avisos similares y posibles riesgos recurrentes
+
+Después de crear correctamente la propuesta de un aviso real, el backend puede
+generar con Ollama un embedding del **texto ya anonimizado**. Un embedding es una
+representación numérica que permite comparar proximidad semántica. El servicio
+recupera únicamente vectores históricos del mismo modelo y dimensión, calcula
+el coseno de forma determinista, aplica `EMBEDDING_THRESHOLD`, ordena de mayor a
+menor y devuelve como máximo `EMBEDDING_TOP_K` resultados. La ubicación se
+normaliza solo para marcar una coincidencia adicional; no se geocodifica ni
+forma parte del vector.
+
+El `score` público se acota entre 0 y 1 para facilitar su lectura. Expresa
+**similitud semántica**, no probabilidad, confianza del modelo ni confirmación de
+que dos avisos describan el mismo incidente. La interfaz solo muestra el bloque
+«Posibles avisos relacionados» cuando existen coincidencias, tanto al crear la
+propuesta como durante la revisión.
+
+Los vectores se guardan de forma explícita en SQLite junto con el modelo y sus
+dimensiones. Para el volumen del MVP esto ofrece trazabilidad y evita añadir una
+base vectorial como FAISS o ChromaDB. La clave compuesta aviso/modelo impide
+duplicados. Comparaciones y benchmark no generan embeddings porque son casos de
+evaluación, no avisos operativos.
+
+La capacidad es complementaria y falla abierta: si Ollama no está disponible,
+falta el modelo o el vector es inválido, el aviso y su propuesta se conservan
+con `similarity.available=false`. Los logs del fallo incluyen metadatos técnicos
+seguros, nunca el texto, la PII ni el vector completo.
+
+Esta funcionalidad **no es RAG**. Usa embeddings para encontrar reincidencias
+en avisos históricos; el RAG descrito a continuación recupera documentación
+preventiva para fundamentar una propuesta.
+
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
 La SPA consulta esa misma versión mediante `GET /api/v1/risk-matrix` y muestra
@@ -259,7 +350,7 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 El triaje sigue este flujo acotado:
 
 ```text
-aviso → categoría inicial → matriz PRL → recuperación documental
+aviso → anonimización → categoría inicial → matriz PRL → recuperación documental
       → LLM → contrato Pydantic → revisión humana
 ```
 
@@ -405,6 +496,5 @@ revisión profesional.
 
 ## Documentación de trabajo
 
-La carpeta `docs/` se conserva exclusivamente en local y está excluida del control de versiones. El README contiene la información pública necesaria para entender y ejecutar el proyecto; las decisiones internas, comparativas y notas de planificación permanecen en esa carpeta local.
 
 Solo se publicarán ejemplos sintéticos. Las credenciales, bases de datos y registros de ejecución quedan excluidos del repositorio. Es un prototipo académico de apoyo a la revisión; no sustituye la evaluación profesional ni el protocolo de emergencias del centro.

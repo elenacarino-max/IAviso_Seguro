@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Request
 from backend.app.core.settings import get_settings
 from backend.app.providers import (
     GeminiTriageProvider,
+    OllamaEmbeddingProvider,
     OllamaTriageProvider,
     ProviderRouter,
 )
@@ -16,6 +17,8 @@ from backend.app.schemas import ErrorResponse, TriageProposalResponse, TriageReq
 from backend.app.services import (
     MetricsService,
     PreventionKnowledgeRetriever,
+    PrivacyService,
+    SimilarityService,
     TriageService,
 )
 
@@ -52,6 +55,18 @@ _triage_service = TriageService(
     ),
 )
 _metrics_service = MetricsService(_settings)
+_privacy_service = PrivacyService()
+_similarity_service = SimilarityService(
+    OllamaEmbeddingProvider(
+        base_url=str(_settings.ollama_base_url),
+        model=_settings.embedding_model,
+        timeout_seconds=_settings.embedding_timeout_seconds,
+    ),
+    enabled=_settings.embedding_enabled,
+    model=_settings.embedding_model,
+    threshold=_settings.embedding_threshold,
+    top_k=_settings.embedding_top_k,
+)
 
 
 def get_triage_service() -> TriageService:
@@ -64,6 +79,18 @@ def get_metrics_service() -> MetricsService:
     """Configuración única para convertir telemetría en métricas públicas."""
 
     return _metrics_service
+
+
+def get_privacy_service() -> PrivacyService:
+    """Limpia el aviso antes de cualquier proveedor o persistencia."""
+
+    return _privacy_service
+
+
+def get_similarity_service() -> SimilarityService:
+    """Capacidad complementaria sustituible sin afectar al triaje."""
+
+    return _similarity_service
 
 
 @lru_cache
@@ -90,6 +117,11 @@ def create_triage(
     payload: TriageRequest,
     request: Request,
     service: Annotated[TriageService, Depends(get_triage_service)],
+    privacy_service: Annotated[PrivacyService, Depends(get_privacy_service)],
+    similarity_service: Annotated[
+        SimilarityService,
+        Depends(get_similarity_service),
+    ],
     metrics_service: Annotated[MetricsService, Depends(get_metrics_service)],
     repository: Annotated[
         SQLiteNoticeRepository,
@@ -97,9 +129,19 @@ def create_triage(
     ],
 ) -> TriageProposalResponse:
     request_id = request.state.request_id
-    execution = service.execute(payload, request_id=request_id)
+    sanitized_notice = privacy_service.sanitize_notice(
+        payload.text,
+        payload.location,
+    )
+    sanitized_payload = payload.model_copy(
+        update={
+            "text": sanitized_notice.text,
+            "location": sanitized_notice.location,
+        }
+    )
+    execution = service.execute(sanitized_payload, request_id=request_id)
     metrics = metrics_service.build(
-        payload,
+        sanitized_payload,
         execution.telemetry,
         evidence=execution.evidence,
     )
@@ -107,10 +149,19 @@ def create_triage(
         raise execution.error
     if execution.result is None:
         raise RuntimeError("La ejecución terminó sin resultado ni error.")
-    return repository.create_triage(
-        payload,
+    similarity = similarity_service.analyze(
+        sanitized_payload.text,
+        sanitized_payload.location,
+        repository,
+        request_id=request_id,
+    )
+    response = repository.create_triage(
+        sanitized_payload,
         execution.result,
         request_id=request_id,
         model=metrics.model,
         metrics=metrics,
+        similarity=similarity.result,
+        embedding=similarity.embedding,
     )
+    return response.model_copy(update={"privacy": sanitized_notice.privacy})

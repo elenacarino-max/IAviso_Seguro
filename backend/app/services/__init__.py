@@ -6,7 +6,9 @@ from .execution import ExecutionTelemetry, TriageExecution
 from .health import HealthService
 from .metrics import MetricsService, error_code_for
 from .metrics_summary import MetricsSummaryService
+from .privacy import PrivacyService
 from .retrieval import PreventionKnowledgeRetriever
+from .similarity import SimilarityAnalysis, SimilarityService
 from .triage_service import TriageService
 
 __all__ = [
@@ -18,6 +20,9 @@ __all__ = [
     "MetricsService",
     "MetricsSummaryService",
     "PreventionKnowledgeRetriever",
+    "PrivacyService",
+    "SimilarityAnalysis",
+    "SimilarityService",
     "TriageExecution",
     "TriageService",
     "error_code_for",

@@ -120,6 +120,148 @@ describe("IAviso Seguro", () => {
     expect(screen.getByRole("textbox", { name: "Caso sintético" })).toHaveAttribute("maxlength", "4000");
   });
 
+  it("informa de forma discreta cuando el backend anonimiza el aviso", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          notice_id: "n-private",
+          triage_run_id: "r-private",
+          status: "pending_review",
+          version: 0,
+          provider: "local",
+          model: "llama3.2:3b",
+          created_at: "2026-09-13T10:00:00Z",
+          category: "otros",
+          urgency: "media",
+          summary: "Aviso anonimizado preparado correctamente para posterior revisión humana técnica.",
+          department: "prevencion",
+          justification: "Propuesta sintética.",
+          metrics: { evidence: [] },
+          privacy: {
+            redacted: true,
+            redaction_count: 2,
+            redaction_types: ["DNI_NIE", "EMAIL"],
+          },
+          similarity: {
+            available: false,
+            has_similar: false,
+            match_count: 0,
+            matches: [],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "¿Qué has observado?" }),
+      "DNI 12345678Z y correo juan@email.com",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    expect(await screen.findByText(
+      "Se anonimizaron 2 datos personales antes de analizar el aviso.",
+    )).toBeInTheDocument();
+    expect(screen.getByText("DNI/NIE · correo electrónico")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Posibles avisos relacionados")).not.toBeInTheDocument();
+  });
+
+  it("muestra coincidencias como similitud semántica y no como confianza", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          notice_id: "n-current",
+          triage_run_id: "r-current",
+          status: "pending_review",
+          version: 0,
+          provider: "local",
+          model: "llama3.2:3b",
+          created_at: "2026-09-13T10:00:00Z",
+          category: "riesgo_electrico",
+          urgency: "alta",
+          summary: "Cable atravesando pasillo requiere aislamiento preventivo y revisión técnica inmediata.",
+          department: "mantenimiento",
+          justification: "Propuesta sintética.",
+          metrics: { evidence: [] },
+          privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+          similarity: {
+            available: true,
+            has_similar: true,
+            match_count: 1,
+            matches: [{
+              notice_id: "n-previous",
+              score: 0.87,
+              same_location: true,
+              location: "Almacén",
+              created_at: "2026-09-12T10:00:00Z",
+              category: "riesgo_electrico",
+              urgency: "alta",
+            }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "¿Qué has observado?" }),
+      "Cable atravesando el pasillo",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    const related = await screen.findByLabelText("Posibles avisos relacionados");
+    expect(within(related).getByText("Posible riesgo recurrente")).toBeInTheDocument();
+    expect(within(related).getByText("Se ha encontrado 1 aviso similar.")).toBeInTheDocument();
+    expect(within(related).getByText("1 pertenece también a esta zona.")).toBeInTheDocument();
+    expect(within(related).getByText("87% similar")).toHaveAttribute(
+      "title",
+      "Similitud semántica; no es probabilidad ni confianza del modelo.",
+    );
+    expect(within(related).getByText(/no confirma que sea el mismo incidente/i)).toBeInTheDocument();
+  });
+
+  it("no ocupa espacio cuando la similitud está disponible pero no hay coincidencias", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          notice_id: "n-without-matches",
+          triage_run_id: "r-without-matches",
+          status: "pending_review",
+          version: 0,
+          provider: "local",
+          model: "llama3.2:3b",
+          created_at: "2026-09-13T10:00:00Z",
+          category: "otros",
+          urgency: "media",
+          summary: "Aviso sintético preparado correctamente para una posterior revisión humana técnica.",
+          department: "prevencion",
+          justification: "Propuesta sintética.",
+          metrics: { evidence: [] },
+          privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+          similarity: {
+            available: true,
+            has_similar: false,
+            match_count: 0,
+            matches: [],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "¿Qué has observado?" }),
+      "Aviso sin coincidencias históricas",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    expect(await screen.findByText("Propuesta creada")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Posibles avisos relacionados")).not.toBeInTheDocument();
+  });
+
   it("muestra propuestas, costes y fallos de una comparación", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (String(input) === "/api/v1/catalogs") {
@@ -381,6 +523,20 @@ describe("IAviso Seguro", () => {
         version: 1,
         created_at: "2026-09-11T10:42:10Z",
         metrics: null,
+        similarity: {
+          available: true,
+          has_similar: true,
+          match_count: 1,
+          matches: [{
+            notice_id: "n-related",
+            score: 0.91,
+            same_location: true,
+            location: "Taller",
+            created_at: "2026-09-10T10:00:00Z",
+            category: "riesgo_electrico",
+            urgency: "alta",
+          }],
+        },
         proposal: { category: "riesgo_electrico", urgency: "alta", summary: "Cable recalentado que requiere revisión técnica prioritaria.", department: "mantenimiento", justification: "Regla sintética." },
         review: { id: "review-1", decision: "modified", final_classification: { category: "riesgo_electrico", urgency: "critica", department: "seguridad" }, reviewer: "Técnica PRL", comment: "Se eleva la prioridad.", created_at: "2026-09-11T10:48:00Z" },
       }],
@@ -411,6 +567,7 @@ describe("IAviso Seguro", () => {
     expect(screen.getByText("Clasificación corregida")).toBeInTheDocument();
     expect(screen.getByText("Urgencia: Alta → Crítica")).toBeInTheDocument();
     expect(screen.getByText(/Clasificación final: Riesgo eléctrico · Crítica · Seguridad/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Posibles avisos relacionados")).toBeInTheDocument();
     expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("closed=true"))).toBe(true);
   });
 

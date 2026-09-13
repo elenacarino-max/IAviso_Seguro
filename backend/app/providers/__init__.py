@@ -1,6 +1,7 @@
 """Proveedores intercambiables utilizados por el servicio de triaje."""
 
 from .base import (
+    EmbeddingProvider,
     ProviderCallMetrics,
     ProviderOutput,
     ProviderStep,
@@ -8,16 +9,25 @@ from .base import (
     ToolCall,
     TriageProvider,
 )
-from .errors import ProviderConnectionError, ProviderError, ProviderRateLimitError
+from .errors import (
+    EmbeddingProviderError,
+    ProviderConnectionError,
+    ProviderError,
+    ProviderRateLimitError,
+)
 from .gemini import GeminiTriageProvider, ProviderUsage
 from .mock import MockTriageProvider
 from .ollama import OllamaTriageProvider
+from .ollama_embeddings import OllamaEmbeddingProvider
 from .router import ProviderRouter
 
 __all__ = [
+    "EmbeddingProvider",
+    "EmbeddingProviderError",
     "GeminiTriageProvider",
     "MockTriageProvider",
     "OllamaTriageProvider",
+    "OllamaEmbeddingProvider",
     "ProviderConnectionError",
     "ProviderCallMetrics",
     "ProviderError",

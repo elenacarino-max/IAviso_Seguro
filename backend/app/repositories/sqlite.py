@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import closing
@@ -21,12 +22,15 @@ from backend.app.schemas import (
     ComparisonResponse,
     ExecutionMetrics,
     NoticePage,
+    NoticeEmbedding,
     NoticeRecord,
     ProposalStatus,
     Provider,
     ReviewRecord,
     ReviewRequest,
     ReviewResponse,
+    SimilarityResult,
+    StoredNoticeEmbedding,
     TriageProposalResponse,
     TriageRequest,
     TriageResult,
@@ -62,7 +66,17 @@ CREATE TABLE IF NOT EXISTS triage_runs (
     version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
     proposal_json TEXT NOT NULL,
     metrics_json TEXT,
+    similarity_json TEXT,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS notice_embeddings (
+    notice_id TEXT NOT NULL REFERENCES notices(id) ON DELETE RESTRICT,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK (dimensions > 0),
+    vector_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (notice_id, model)
 );
 
 CREATE TABLE IF NOT EXISTS comparisons (
@@ -140,6 +154,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_notice
     ON audit_events(notice_id, id);
 CREATE INDEX IF NOT EXISTS idx_comparison_runs_comparison
     ON comparison_runs(comparison_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_notice_embeddings_model
+    ON notice_embeddings(model, created_at);
 """
 
 
@@ -191,6 +207,10 @@ class SQLiteNoticeRepository:
                     connection.execute(
                         "ALTER TABLE triage_runs ADD COLUMN metrics_json TEXT"
                     )
+                if "similarity_json" not in columns:
+                    connection.execute(
+                        "ALTER TABLE triage_runs ADD COLUMN similarity_json TEXT"
+                    )
         except sqlite3.Error as exc:
             raise PersistenceError("No se pudo inicializar la base de datos.") from exc
 
@@ -202,6 +222,8 @@ class SQLiteNoticeRepository:
         request_id: str,
         model: str | None,
         metrics: ExecutionMetrics,
+        similarity: SimilarityResult = SimilarityResult(),
+        embedding: NoticeEmbedding | None = None,
     ) -> TriageProposalResponse:
         notice_id = uuid4()
         triage_run_id = uuid4()
@@ -226,8 +248,8 @@ class SQLiteNoticeRepository:
                 """
                 INSERT INTO triage_runs (
                     id, notice_id, request_id, provider, model, status,
-                    version, proposal_json, metrics_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?, ?)
+                    version, proposal_json, metrics_json, similarity_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?, ?, ?)
                 """,
                 (
                     str(triage_run_id),
@@ -237,9 +259,25 @@ class SQLiteNoticeRepository:
                     model or None,
                     proposal_json,
                     metrics.model_dump_json(),
+                    similarity.model_dump_json(),
                     created_at.isoformat(),
                 ),
             )
+            if embedding is not None:
+                connection.execute(
+                    """
+                    INSERT INTO notice_embeddings (
+                        notice_id, model, dimensions, vector_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(notice_id),
+                        embedding.model,
+                        embedding.dimensions,
+                        json.dumps(embedding.vector, separators=(",", ":")),
+                        created_at.isoformat(),
+                    ),
+                )
             connection.execute(
                 """
                 INSERT INTO audit_events (
@@ -266,6 +304,7 @@ class SQLiteNoticeRepository:
             model=model or None,
             created_at=created_at,
             metrics=metrics,
+            similarity=similarity,
         )
 
     def create_comparison(
@@ -482,6 +521,52 @@ class SQLiteNoticeRepository:
                 "Las comparaciones guardadas son inválidas."
             ) from exc
 
+    def list_notice_embeddings(
+        self,
+        model: str,
+    ) -> tuple[StoredNoticeEmbedding, ...]:
+        """Recupera solo vectores compatibles y su clasificación vigente."""
+
+        try:
+            with closing(self._connect()) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT notice_id, model, dimensions, vector_json, created_at
+                    FROM notice_embeddings
+                    WHERE model = ?
+                    ORDER BY created_at DESC, notice_id
+                    """,
+                    (model,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise PersistenceError(
+                "No se pudieron consultar los embeddings de avisos."
+            ) from exc
+
+        notices = {notice.id: notice for notice in self.list_notices()}
+        try:
+            candidates: list[StoredNoticeEmbedding] = []
+            for row in rows:
+                notice_id = UUID(row["notice_id"])
+                notice = notices[notice_id]
+                run = notice.triage_runs[0]
+                final = run.review.final_classification if run.review else None
+                candidates.append(
+                    StoredNoticeEmbedding(
+                        notice_id=notice_id,
+                        model=row["model"],
+                        dimensions=row["dimensions"],
+                        vector=tuple(json.loads(row["vector_json"])),
+                        location=notice.location,
+                        created_at=datetime.fromisoformat(row["created_at"]),
+                        category=final.category if final else run.proposal.category,
+                        urgency=final.urgency if final else run.proposal.urgency,
+                    )
+                )
+            return tuple(candidates)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PersistenceError("Los embeddings guardados son inválidos.") from exc
+
     def list_notices(self) -> tuple[NoticeRecord, ...]:
         try:
             with closing(self._connect()) as connection:
@@ -500,6 +585,7 @@ class SQLiteNoticeRepository:
                         tr.version,
                         tr.proposal_json,
                         tr.metrics_json,
+                        tr.similarity_json,
                         tr.created_at AS run_created_at,
                         r.id AS review_id,
                         r.decision,
@@ -631,7 +717,7 @@ class SQLiteNoticeRepository:
             row = connection.execute(
                 """
                 SELECT id, request_id, provider, model, status, version,
-                       proposal_json, metrics_json, created_at
+                       proposal_json, metrics_json, similarity_json, created_at
                 FROM triage_runs
                 WHERE notice_id = ?
                 ORDER BY created_at DESC, rowid DESC
@@ -748,6 +834,7 @@ class SQLiteNoticeRepository:
                     if row["metrics_json"] is not None
                     else None
                 ),
+                similarity=self._similarity_from_value(row["similarity_json"]),
                 review=record,
             ),
         )
@@ -835,7 +922,18 @@ class SQLiteNoticeRepository:
                 if row["metrics_json"] is not None
                 else None
             ),
+            similarity=SQLiteNoticeRepository._similarity_from_value(
+                row["similarity_json"]
+            ),
             review=review,
+        )
+
+    @staticmethod
+    def _similarity_from_value(value: str | None) -> SimilarityResult:
+        return (
+            SimilarityResult.model_validate_json(value)
+            if value is not None
+            else SimilarityResult()
         )
 
     def _utc_now(self) -> datetime:

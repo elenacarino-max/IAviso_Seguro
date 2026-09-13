@@ -20,7 +20,9 @@ from backend.app.schemas import (
     ComparisonRequest,
     ComparisonReviewRequest,
     ExecutionMetrics,
+    NoticeEmbedding,
     ReviewRequest,
+    SimilarityResult,
     TriageRequest,
     TriageResult,
 )
@@ -104,6 +106,33 @@ def test_new_proposal_is_pending_and_preserves_original_data(repository):
     assert [event.event_type for event in events] == ["triage_created"]
     assert events[0].new_status == "pending_review"
     assert events[0].actor is None
+
+
+def test_embedding_and_similarity_are_persisted_with_the_created_notice(repository):
+    embedding = NoticeEmbedding(
+        model="embed-test",
+        dimensions=3,
+        vector=(0.1, 0.2, 0.3),
+    )
+    similarity = SimilarityResult(available=True)
+
+    created = repository.create_triage(
+        REQUEST,
+        PROPOSAL,
+        request_id=str(uuid4()),
+        model="modelo-prueba",
+        metrics=METRICS,
+        similarity=similarity,
+        embedding=embedding,
+    )
+
+    stored = repository.list_notice_embeddings("embed-test")
+    assert len(stored) == 1
+    assert stored[0].notice_id == created.notice_id
+    assert stored[0].vector == embedding.vector
+    assert stored[0].dimensions == 3
+    run = repository.list_notices()[0].triage_runs[0]
+    assert run.similarity == similarity
 
 
 def test_modified_review_keeps_original_and_builds_final_classification(repository):
@@ -300,3 +329,12 @@ def test_phase_six_database_gets_additive_metrics_migration(tmp_path):
             row[1] for row in connection.execute("PRAGMA table_info(triage_runs)")
         }
     assert "metrics_json" in columns
+    assert "similarity_json" in columns
+    with sqlite3.connect(database_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert "notice_embeddings" in tables

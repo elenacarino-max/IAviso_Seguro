@@ -26,9 +26,13 @@ protocolo de emergencias.
         ↓
     Selección de Ollama o Gemini
         ↓
+    Anonimización local
+        ↓
     Matriz PRL + recuperación documental
         ↓
     Propuesta pendiente
+        ↓
+    Embedding local + avisos históricos
         ↓
     Bandeja de revisión
         ↓
@@ -36,17 +40,23 @@ protocolo de emergencias.
         ↓
     Registro de decisiones cerradas
 
-1. La persona describe el aviso sin incluir datos personales.
-2. Elige Ollama local o Gemini externo.
-3. El backend valida la entrada y solicita una propuesta al proveedor elegido.
+1. La persona describe el aviso, evita incluir datos personales y elige Ollama
+   local o Gemini externo.
+2. El backend valida la entrada y sustituye PII conocida por marcadores sin
+   conservar sus valores.
+3. El backend solicita una propuesta al proveedor elegido usando solo el texto
+   anonimizado.
 4. El modelo debe consultar la matriz de riesgos.
 5. Tras validar la categoría, el backend recupera documentación preventiva
    relacionada y conserva las fuentes realmente utilizadas.
 6. Pydantic comprueba el contrato de salida, incluido el resumen de exactamente
    diez palabras.
-7. La propuesta se guarda en SQLite con estado pendiente.
-8. Una persona técnica la aprueba, modifica o rechaza.
-9. La decisión queda disponible en el Registro con su auditoría y destino final.
+7. Si la función está activada, Ollama representa el texto anonimizado como un
+   vector y el backend busca avisos históricos semánticamente próximos.
+8. La propuesta, el aviso anonimizado y, si existe, su embedding se guardan en
+   SQLite con estado pendiente.
+9. Una persona técnica la aprueba, modifica o rechaza.
+10. La decisión queda disponible en el Registro con su auditoría y destino final.
 
 ## Pantallas
 
@@ -55,11 +65,19 @@ protocolo de emergencias.
 Captura texto, ubicación opcional y motor. Ollama indica que los datos
 permanecen en local; Gemini informa de que la petición se envía al proveedor.
 El botón principal solo se activa cuando existe texto válido.
+Si el backend anonimiza el texto o la ubicación, la pantalla comunica el número
+y los tipos de datos sustituidos, pero nunca muestra sus valores.
+Cuando existen coincidencias semánticas, aparece un bloque discreto con los
+avisos más próximos, su categoría, urgencia, ubicación, fecha y porcentaje de
+similitud. Si no hay coincidencias o la capacidad no está disponible, no ocupa
+espacio adicional.
 
 ### Bandeja
 
 Contiene únicamente propuestas pendientes. Permite buscar y filtrar, consultar
 la propuesta original, su justificación, la matriz y la evidencia RAG. La
+tarjeta de revisión conserva también los posibles avisos relacionados detectados
+al crear la propuesta. La
 revisión admite tres decisiones:
 
 - Aprobada: confirma sin cambios categoría, urgencia y departamento.
@@ -69,8 +87,9 @@ revisión admite tres decisiones:
 ### Registro
 
 Muestra exclusivamente avisos cerrados. Cada tarjeta indica estado y destino.
-Al abrirla aparecen la observación original, la propuesta, la decisión humana,
-la clasificación final, las fuentes consultadas y la línea temporal.
+Al abrirla aparecen la observación anonimizada persistida, la propuesta, la
+decisión humana, la clasificación final, las fuentes consultadas y la línea
+temporal.
 
 ### Panel
 
@@ -107,9 +126,42 @@ configurado puede generar consumo de API.
 
 ## Persistencia y trazabilidad
 
-SQLite conserva el aviso, la propuesta original, proveedor y modelo, métricas,
-evidencia, revisión, clasificación final y eventos de auditoría. La propuesta y
-la decisión humana nunca se sobrescriben entre sí.
+SQLite conserva el aviso ya anonimizado, la propuesta original, proveedor y
+modelo, métricas, evidencia, revisión, clasificación final y eventos de
+auditoría. Si la recurrencia está activada, conserva además un único embedding
+por aviso y modelo, su dimensión y el resultado de similitud mostrado durante la
+revisión. La propuesta y la decisión humana nunca se sobrescriben entre sí.
+
+## Privacidad del MVP
+
+El filtro se ejecuta en FastAPI antes de matriz, RAG, Ollama, Gemini y SQLite.
+Detecta correos electrónicos, teléfonos españoles, DNI/NIE e IBAN y utiliza los
+marcadores `[EMAIL]`, `[PHONE]`, `[DNI_NIE]` e `[IBAN]`. Los valores encontrados
+no forman parte del resultado interno, la respuesta, las métricas ni los logs.
+
+No detecta automáticamente nombres propios. La recomendación funcional sigue
+siendo no introducir nombres ni otros datos personales; el filtro reduce una
+exposición accidental, pero no garantiza que cualquier PII posible sea
+reconocida.
+
+## Detección de recurrencia
+
+Esta función opcional compara el significado del nuevo aviso con avisos reales
+anteriores. Los embeddings se generan localmente mediante Ollama y siempre a
+partir del texto que ya ha pasado por `PrivacyService`. No se usa Gemini ni se
+envía el vector a un servicio externo.
+
+El porcentaje mostrado es el coseno entre dos vectores, acotado para la interfaz:
+indica similitud semántica, no confianza, probabilidad ni identidad del incidente.
+La coincidencia de ubicación es solo una señal visual adicional tras normalizar
+mayúsculas y espacios. El umbral y el número máximo de resultados son
+configurables.
+
+Para el MVP los vectores viven en SQLite por su bajo volumen y trazabilidad. Esta
+función no es RAG: busca avisos posiblemente recurrentes, mientras el RAG busca
+fragmentos de documentación preventiva. Comparación y benchmark no crean
+embeddings. Si Ollama o el modelo de embeddings fallan, el alta continúa sin
+mostrar el bloque de relacionados.
 
 El MVP no envía todavía tarjetas a sistemas departamentales. Ese escalado debe
 usar una cola transaccional y exclusivamente el departamento final validado.

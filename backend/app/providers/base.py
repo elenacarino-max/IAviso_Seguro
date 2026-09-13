@@ -58,3 +58,11 @@ class TriageProvider(Protocol):
     ) -> ProviderStep:
         """Solicita una herramienta o genera una salida candidata."""
         ...
+
+
+class EmbeddingProvider(Protocol):
+    """Contrato mínimo para generar vectores sin acoplar el servicio a Ollama."""
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        """Genera un vector para texto ya anonimizado."""
+        ...

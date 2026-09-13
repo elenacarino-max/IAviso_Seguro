@@ -14,11 +14,14 @@ las fuentes y persiste los resultados.
        ▼
     FastAPI
        ├── Pydantic y catálogos cerrados
+       ├── Privacidad determinista
        ├── Servicio de triaje
        │    ├── Ollama local
        │    ├── Gemini externo
        │    ├── Matriz PRL versionada
        │    └── RAG local versionado
+       ├── Similitud de avisos
+       │    └── Embeddings locales de Ollama
        ├── Métricas y benchmark
        └── Repositorio SQLite
 
@@ -30,7 +33,7 @@ las fuentes y persiste los resultados.
 | frontend | Interfaz Streamlit conservada como respaldo académico. |
 | backend/app/api | Endpoints FastAPI y dependencias sustituibles. |
 | backend/app/schemas | Contratos estrictos de entrada, salida y persistencia. |
-| backend/app/services | Triaje, recuperación, métricas, salud y evaluación. |
+| backend/app/services | Privacidad, triaje, recuperación, métricas, salud y evaluación. |
 | backend/app/providers | Adaptadores de Ollama, Gemini y proveedor simulado. |
 | backend/app/tools | Herramienta acotada de consulta de matriz. |
 | backend/app/repositories | Persistencia y transacciones SQLite. |
@@ -45,14 +48,18 @@ las fuentes y persiste los resultados.
 
     React -> FastAPI: texto, ubicación, proveedor
     FastAPI -> Pydantic: validar entrada
-    FastAPI -> Proveedor: solicitar clasificación
+    FastAPI -> Privacidad: sustituir PII en texto y ubicación libre
+    Privacidad -> Proveedor: solicitar clasificación con campos anonimizados
     Proveedor -> FastAPI: llamada consultar_matriz_riesgos
     FastAPI -> Matriz: validar categoría y recuperar regla
     FastAPI -> RAG: recuperar fragmentos de la categoría
     FastAPI -> Proveedor: regla y evidencia
     Proveedor -> FastAPI: propuesta JSON
     FastAPI -> Pydantic: validar o reparar salida
-    FastAPI -> SQLite: guardar propuesta, métricas y evidencia
+    FastAPI -> Ollama embeddings: vectorizar solo el texto anonimizado
+    FastAPI -> SQLite: recuperar vectores históricos del mismo modelo
+    FastAPI -> Similitud: coseno, umbral, orden y top-k
+    FastAPI -> SQLite: guardar aviso, propuesta, métricas, similitud y embedding
     FastAPI -> React: propuesta pendiente
     Técnico -> FastAPI: aprobar, corregir o rechazar
     FastAPI -> SQLite: guardar decisión y auditoría
@@ -61,13 +68,27 @@ Solo se permite una llamada a la herramienta de matriz. El texto libre se trata
 como datos y no puede habilitar herramientas adicionales ni declarar las
 fuentes visibles.
 
+La dependencia `PrivacyService` se inyecta en las rutas de triaje y comparación.
+Su ejecución precede al servicio de triaje, por lo que proveedores, matriz, RAG,
+métricas y repositorio solo reciben los campos libres anonimizados. El servicio
+usa patrones locales y checksum para correo, teléfono español, DNI/NIE e IBAN. Su
+resultado no conserva coincidencias: solo texto limpio, indicador, recuento y
+tipos detectados. Los nombres propios quedan fuera del MVP.
+
+`SimilarityService` se inyecta por separado y solo se ejecuta en el endpoint de
+triaje una vez validada la propuesta. Recibe exclusivamente el texto y ubicación
+del payload ya saneado. El proveedor de embeddings está detrás del protocolo
+`EmbeddingProvider`, por lo que las pruebas usan dobles deterministas sin un
+Ollama real. Un fallo de esta capacidad se captura antes de persistir el aviso y
+no altera el éxito del triaje.
+
 ## Relaciones con servicios externos
 
 | Servicio | Dirección | Datos intercambiados | Credencial | Comportamiento si falta |
 | --- | --- | --- | --- | --- |
-| Ollama | FastAPI hacia servidor local | Prompt, aviso y evidencia; respuesta del modelo | No | El proveedor local devuelve un error controlado. |
-| Gemini | FastAPI hacia API REST de Google | Prompt, aviso y evidencia; respuesta y uso de tokens | Clave solo en backend | Devuelve 503 antes de intentar la red. |
-| SQLite | FastAPI hacia archivo local | Avisos, propuestas, revisiones, auditoría, comparaciones y métricas | No | La salud lo comunica y la escritura falla de forma controlada. |
+| Ollama | FastAPI hacia servidor local | Prompt, aviso anonimizado y evidencia; opcionalmente texto anonimizado para obtener un embedding | No | Triaje devuelve un error controlado; la similitud falla abierta y no bloquea el aviso. |
+| Gemini | FastAPI hacia API REST de Google | Prompt, aviso anonimizado y evidencia; respuesta y uso de tokens | Clave solo en backend | Devuelve 503 antes de intentar la red. |
+| SQLite | FastAPI hacia archivo local | Avisos anonimizados, propuestas, revisiones, auditoría, comparaciones y métricas | No | La salud lo comunica y la escritura falla de forma controlada. |
 | GitHub Actions | GitHub hacia el repositorio | Código y pruebas; no avisos de usuario | No para la CI actual | Backend y frontend se validan con mocks. |
 
 El navegador no recibe claves ni llama directamente a Gemini u Ollama. Las
@@ -76,13 +97,38 @@ variables de entorno del backend.
 
 ## Comparación y evaluación
 
-La comparación crea dos trabajadores concurrentes. Ambos reciben la misma
-entrada y comparten contrato, matriz y recuperación documental. Cada ejecución
+La comparación anonimiza una vez y crea dos trabajadores concurrentes. Ambos
+reciben la misma entrada limpia y comparten contrato, matriz y recuperación
+documental. Cada ejecución
 mantiene sus métricas y errores; el resultado conserva el orden Ollama/Gemini.
 
 El benchmark usa un dataset independiente de los ejemplos del prompt. Ejecuta
 catorce casos por proveedor y no crea avisos en la bandeja. La referencia humana
 de una comparación se guarda una sola vez y permite calcular coincidencia real.
+Ni comparación ni benchmark invocan el proveedor de embeddings o escriben en
+`notice_embeddings`.
+
+## Embeddings de recurrencia (no RAG)
+
+`OllamaEmbeddingProvider` usa el endpoint local `/api/embed` y el modelo indicado
+por `EMBEDDING_MODEL`. No descarga modelos ni contiene un nombre fijado en la
+lógica. El operador debe ejecutar previamente, por ejemplo,
+`ollama pull nomic-embed-text` y activar `EMBEDDING_ENABLED`.
+
+El servicio consulta solo históricos del mismo modelo y descarta dimensiones
+incompatibles. Calcula el coseno en Python, lo acota entre 0 y 1 para el contrato
+público, filtra por `EMBEDDING_THRESHOLD`, ordena de forma descendente y limita
+la respuesta a `EMBEDDING_TOP_K`. Este valor mide cercanía semántica: no es una
+probabilidad, confianza del LLM ni prueba de que sea el mismo incidente.
+
+La ubicación se normaliza con Unicode, espacios y mayúsculas/minúsculas para
+producir `same_location`; no interviene en el embedding. Los fallos se registran
+sin texto, PII ni vector y producen `similarity.available=false`.
+
+SQLite es suficiente para el volumen pequeño del prototipo y permite auditar el
+modelo y dimensión de cada vector sin incorporar FAISS, ChromaDB u otra
+dependencia. Esta búsqueda entre avisos operativos es distinta del RAG: no
+recupera documentación ni alimenta la propuesta del LLM.
 
 ## Matriz y RAG
 
@@ -105,6 +151,8 @@ Las tablas principales son:
 
 - notices: observación y ubicación.
 - triage_runs: propuesta original, proveedor, modelo, estado y métricas.
+- notice_embeddings: vector JSON, modelo, dimensión y fecha asociados al aviso;
+  clave única por aviso/modelo.
 - reviews: decisión humana y clasificación final.
 - audit_events: transiciones y actor.
 - comparisons y comparison_runs: ejecuciones paralelas sin duplicar avisos.
@@ -129,6 +177,7 @@ consulta mínima de SQLite. Las sondas de modelo no generan contenido.
 
 - Incorporar autenticación y roles para identificar revisores.
 - Cifrar secretos y definir políticas de retención y datos personales.
+- Ampliar la detección más allá del MVP; los nombres propios no se infieren.
 - Sustituir el corpus sintético por documentación PRL validada y versionada.
 - Añadir una outbox idempotente para integraciones departamentales.
 - Revisar legalmente proveedores, transferencias de datos y trazabilidad.

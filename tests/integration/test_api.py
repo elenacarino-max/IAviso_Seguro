@@ -1,17 +1,22 @@
 """Pruebas del recorrido HTTP de triaje con herramienta real."""
 
-from threading import Barrier, get_ident
+import sqlite3
+from threading import Barrier, Lock, get_ident
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_health import get_health_service
-from backend.app.api.routes_triage import get_notice_repository, get_triage_service
+from backend.app.api.routes_triage import (
+    get_notice_repository,
+    get_similarity_service,
+    get_triage_service,
+)
 from backend.app.main import app
 from backend.app.providers import MockTriageProvider, ToolCall
 from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import HealthResponse, ServiceHealth
-from backend.app.services import TriageService
+from backend.app.services import SimilarityService, TriageService
 
 client = TestClient(app)
 
@@ -63,6 +68,54 @@ class ConcurrentProbeProvider:
                 "Matriz didáctica y propuesta pendiente de revisión profesional."
             ),
         }
+
+
+class RecordingProvider(MockTriageProvider):
+    """Conserva únicamente las entradas de prueba recibidas por el proveedor."""
+
+    def __init__(self) -> None:
+        self.received_texts: list[str] = []
+        self.received_locations: list[str | None] = []
+        self._lock = Lock()
+
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
+        with self._lock:
+            self.received_texts.append(request.text)
+            self.received_locations.append(request.location)
+        return super().generate(
+            request,
+            observation=observation,
+            repair=repair,
+            tool_call=tool_call,
+        )
+
+
+class DeterministicEmbeddingProvider:
+    """Embedding pequeño y controlable para pruebas de extremo a extremo."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.received_texts: list[str] = []
+
+    def embed(self, text: str) -> tuple[float, ...]:
+        self.received_texts.append(text)
+        if self.fail:
+            raise RuntimeError("fallo sintético de embeddings")
+        if "extintor" in text.casefold():
+            return (0.0, 1.0)
+        if "tropezado" in text.casefold():
+            return (0.98, 0.2)
+        return (1.0, 0.0)
+
+
+def enable_similarity(provider, *, threshold: float = 0.75) -> None:
+    app.dependency_overrides[get_similarity_service] = lambda: SimilarityService(
+        provider,
+        enabled=True,
+        model="embed-test",
+        threshold=threshold,
+        top_k=3,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -209,6 +262,165 @@ def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider
     )
     assert "Matriz didáctica 1.0.0, regla RM-OTRO-001" in result["justification"]
     assert "revisión profesional" in result["justification"]
+    assert result["privacy"] == {
+        "redacted": False,
+        "redaction_count": 0,
+        "redaction_types": [],
+    }
+    assert result["similarity"] == {
+        "available": False,
+        "has_similar": False,
+        "match_count": 0,
+        "matches": [],
+    }
+
+
+def test_triage_anonymizes_before_provider_persistence_and_logs(
+    use_mock_provider_for_contract_tests,
+    caplog,
+):
+    repository = use_mock_provider_for_contract_tests
+    provider = RecordingProvider()
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(provider)
+    original_values = ("12345678Z", "juan@email.com")
+
+    response = client.post(
+        "/api/v1/triage",
+        json={
+            "text": (
+                "El trabajador con DNI 12345678Z y correo juan@email.com "
+                "ha sufrido una caída."
+            ),
+            "provider": "external",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["privacy"] == {
+        "redacted": True,
+        "redaction_count": 2,
+        "redaction_types": ["EMAIL", "DNI_NIE"],
+    }
+    expected = (
+        "El trabajador con DNI [DNI_NIE] y correo [EMAIL] ha sufrido una caída."
+    )
+    assert provider.received_texts
+    assert set(provider.received_texts) == {expected}
+    notices = repository.list_notices()
+    assert len(notices) == 1
+    assert notices[0].text == expected
+    assert all(value not in response.text for value in original_values)
+    assert all(value not in caplog.text for value in original_values)
+
+
+def test_embedding_receives_only_sanitized_text_and_is_linked_to_notice(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    embedding_provider = DeterministicEmbeddingProvider()
+    enable_similarity(embedding_provider)
+
+    response = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "Cable junto a juan@email.com y DNI 12345678Z.",
+            "provider": "local",
+            "location": " ALMACÉN ",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert embedding_provider.received_texts == [
+        "Cable junto a [EMAIL] y DNI [DNI_NIE]."
+    ]
+    assert body["similarity"]["available"] is True
+    embeddings = repository.list_notice_embeddings("embed-test")
+    assert len(embeddings) == 1
+    assert str(embeddings[0].notice_id) == body["notice_id"]
+    assert embeddings[0].model == "embed-test"
+    assert embeddings[0].dimensions == 2
+
+
+def test_embedding_failure_does_not_block_triage(
+    use_mock_provider_for_contract_tests,
+    caplog,
+):
+    repository = use_mock_provider_for_contract_tests
+    enable_similarity(DeterministicEmbeddingProvider(fail=True))
+
+    response = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "Aviso operativo de juan@email.com",
+            "provider": "local",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["similarity"]["available"] is False
+    assert len(repository.list_notices()) == 1
+    assert repository.list_notice_embeddings("embed-test") == ()
+    assert "juan@email.com" not in caplog.text
+    assert "Aviso operativo" not in caplog.text
+    assert "[EMAIL]" not in caplog.text
+
+
+def test_later_notice_finds_similar_history_but_not_unrelated_notice(
+    use_mock_provider_for_contract_tests,
+):
+    embedding_provider = DeterministicEmbeddingProvider()
+    enable_similarity(embedding_provider, threshold=0.9)
+    first = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "Cable suelto en el pasillo del almacén.",
+            "provider": "local",
+            "location": "Almacén",
+        },
+    ).json()
+
+    related = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "Dos trabajadores han tropezado con un cable.",
+            "provider": "local",
+            "location": " almacén ",
+        },
+    ).json()
+    unrelated = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "Extintor sin señalizar en oficinas.",
+            "provider": "local",
+            "location": "Oficinas",
+        },
+    ).json()
+
+    assert related["similarity"]["has_similar"] is True
+    assert related["similarity"]["matches"][0]["notice_id"] == first["notice_id"]
+    assert related["similarity"]["matches"][0]["same_location"] is True
+    assert unrelated["similarity"]["has_similar"] is False
+
+
+def test_comparison_and_benchmark_never_generate_or_persist_embeddings(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    embedding_provider = DeterministicEmbeddingProvider()
+    enable_similarity(embedding_provider)
+
+    comparison = client.post(
+        "/api/v1/comparisons",
+        json={"text": "Caso comparativo sintético"},
+    )
+    benchmark = client.post("/api/v1/evaluations")
+
+    assert comparison.status_code == 200
+    assert benchmark.status_code == 200
+    assert embedding_provider.received_texts == []
+    assert repository.list_notice_embeddings("embed-test") == ()
 
 
 @pytest.mark.parametrize(
@@ -248,7 +460,43 @@ def test_comparison_uses_same_input_without_creating_notices(
     assert all(item["result"] is not None for item in body["results"])
     assert body["results"][0]["metrics"]["api_cost"] == "0"
     assert body["results"][1]["metrics"]["api_cost"] is None
+    assert body["privacy"]["redacted"] is False
     assert repository.list_notices() == ()
+
+
+def test_comparison_applies_the_same_privacy_policy(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    provider = RecordingProvider()
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(provider)
+
+    response = client.post(
+        "/api/v1/comparisons",
+        json={
+            "text": "Usar ES91 2100 0418 4502 0005 1332.",
+            "location": "Contacto 612 345 678",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["privacy"] == {
+        "redacted": True,
+        "redaction_count": 2,
+        "redaction_types": ["PHONE", "IBAN"],
+    }
+    expected = "Usar [IBAN]."
+    assert len(provider.received_texts) == 4
+    assert set(provider.received_texts) == {expected}
+    assert set(provider.received_locations) == {"Contacto [PHONE]"}
+    with sqlite3.connect(repository._database_path) as connection:
+        stored_text, stored_location = connection.execute(
+            "SELECT text, location FROM comparisons"
+        ).fetchone()
+    assert (stored_text, stored_location) == (expected, "Contacto [PHONE]")
+    assert "612 345 678" not in response.text
+    assert "ES91 2100 0418 4502 0005 1332" not in response.text
 
 
 def test_comparison_executes_both_providers_concurrently(

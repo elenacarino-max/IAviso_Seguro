@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 from .catalogs import Category, Department, Provider, Urgency
 from .metrics import ExecutionMetrics
+from .privacy import PrivacyMetadata
+from .similarity import SimilarityResult
 from .triage import TriageResult
 
 ProposalStatus = Literal["pending_review", "approved", "modified", "rejected"]
@@ -68,6 +70,8 @@ class TriageProposalResponse(TriageResult):
     model: str | None
     created_at: datetime
     metrics: ExecutionMetrics
+    privacy: PrivacyMetadata = PrivacyMetadata()
+    similarity: SimilarityResult = SimilarityResult()
 
 
 class ReviewRecord(WorkflowContract):
@@ -89,6 +93,7 @@ class TriageRunRecord(WorkflowContract):
     proposal: TriageResult
     created_at: datetime
     metrics: ExecutionMetrics | None
+    similarity: SimilarityResult = SimilarityResult()
     review: ReviewRecord | None
 
 

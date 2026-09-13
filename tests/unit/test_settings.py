@@ -44,6 +44,42 @@ def test_ollama_settings_can_be_configured_without_fixed_model(monkeypatch):
     assert settings.ollama_top_p == 0.8
 
 
+def test_embedding_settings_are_configurable(monkeypatch):
+    monkeypatch.setenv("EMBEDDING_ENABLED", "true")
+    monkeypatch.setenv("EMBEDDING_MODEL", "embed-test")
+    monkeypatch.setenv("EMBEDDING_THRESHOLD", "0.82")
+    monkeypatch.setenv("EMBEDDING_TOP_K", "4")
+    monkeypatch.setenv("EMBEDDING_TIMEOUT_SECONDS", "7")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.embedding_enabled is True
+    assert settings.embedding_model == "embed-test"
+    assert settings.embedding_threshold == 0.82
+    assert settings.embedding_top_k == 4
+    assert settings.embedding_timeout_seconds == 7
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("embedding_threshold", -0.1),
+        ("embedding_threshold", 1.1),
+        ("embedding_top_k", 0),
+        ("embedding_top_k", 11),
+        ("embedding_timeout_seconds", 0),
+    ],
+)
+def test_embedding_numeric_settings_reject_unsafe_ranges(field, value):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: value})
+
+
+def test_enabled_embeddings_require_a_model():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, embedding_enabled=True, embedding_model=" ")
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

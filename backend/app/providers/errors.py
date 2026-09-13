@@ -21,3 +21,7 @@ class ProviderRateLimitError(ProviderError):
             raise ValueError("retry_after_seconds debe ser un entero no negativo.")
         super().__init__("El proveedor ha alcanzado su límite de peticiones.")
         self.retry_after_seconds = retry_after_seconds
+
+
+class EmbeddingProviderError(ProviderError):
+    """El proveedor local de embeddings no pudo producir un vector válido."""

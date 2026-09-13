@@ -41,9 +41,11 @@ import type {
   NoticeRecord,
   NoticePage,
   NoticeQuery,
+  PrivacyMetadata,
   Provider,
   ProposalStatus,
   RiskMatrixDocument,
+  SimilarityResult,
   ReviewDecision,
   TriageProposal,
   TriageProposalResponse,
@@ -134,6 +136,64 @@ function StatusMessage({ error }: { error: unknown }) {
         {apiError?.requestId && <small>Referencia: {apiError.requestId}</small>}
       </div>
     </div>
+  );
+}
+
+const privacyTypeLabels = {
+  EMAIL: "correo electrónico",
+  PHONE: "teléfono",
+  DNI_NIE: "DNI/NIE",
+  IBAN: "IBAN",
+} as const;
+
+function PrivacyNotice({ privacy }: { privacy: PrivacyMetadata | undefined }) {
+  if (!privacy?.redacted) return null;
+  const noun = privacy.redaction_count === 1 ? "dato personal" : "datos personales";
+  const detectedTypes = privacy.redaction_types.map((type) => privacyTypeLabels[type]).join(" · ");
+  return (
+    <div className="privacy-notice" role="status">
+      <ShieldCheck size={17} aria-hidden="true" />
+      <span>
+        <strong>Se anonimizaron {privacy.redaction_count} {noun} antes de analizar el aviso.</strong>
+        {detectedTypes && <small>{detectedTypes}</small>}
+      </span>
+    </div>
+  );
+}
+
+function SimilarityNotice({ similarity }: { similarity: SimilarityResult | undefined }) {
+  if (!similarity?.available || !similarity.has_similar) return null;
+  const sameLocation = similarity.matches.filter((match) => match.same_location).length;
+  return (
+    <section className="similarity-notice" aria-label="Posibles avisos relacionados">
+      <header>
+        <AlertTriangle size={18} aria-hidden="true" />
+        <div>
+          <strong>Posible riesgo recurrente</strong>
+          <p>{similarity.match_count === 1
+            ? "Se ha encontrado 1 aviso similar."
+            : `Se han encontrado ${similarity.match_count} avisos similares.`}</p>
+          {sameLocation > 0 && <small>{sameLocation === 1
+            ? "1 pertenece también a esta zona."
+            : `${sameLocation} pertenecen también a esta zona.`}</small>}
+        </div>
+      </header>
+      <ul>
+        {similarity.matches.map((match) => (
+          <li key={match.notice_id}>
+            <div>
+              <strong>{optionLabel(match.category)}</strong>
+              <span className={`urgency ${urgencyTone(match.urgency)}`}>{optionLabel(match.urgency)}</span>
+            </div>
+            <p><MapPin size={13} /> {match.location ?? "Ubicación no indicada"} · {formatDate(match.created_at)}</p>
+            <b title="Similitud semántica; no es probabilidad ni confianza del modelo.">
+              {Math.round(match.score * 100)}% similar
+            </b>
+          </li>
+        ))}
+      </ul>
+      <footer>La similitud semántica es una señal orientativa: no confirma que sea el mismo incidente.</footer>
+    </section>
   );
 }
 
@@ -354,6 +414,8 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
         <div className="result-banner" role="status">
           <div><Check /><span><strong>Propuesta creada</strong>Queda pendiente de validación humana.</span></div>
           <div className={`urgency ${urgencyTone(result.urgency)}`}>{optionLabel(result.urgency)}</div>
+          <PrivacyNotice privacy={result.privacy} />
+          <SimilarityNotice similarity={result.similarity} />
           <div className="result-fields">
             <p><b>Categoría</b>{optionLabel(result.category)}</p>
             <p><b>Departamento</b>{optionLabel(result.department)}</p>
@@ -507,6 +569,7 @@ function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone 
       <h2>{optionLabel(run.proposal.category)}</h2>
       <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span className="routing-destination"><UserRoundCheck size={14} /> Destino propuesto: {optionLabel(run.proposal.department)}</span></div>
       <blockquote>{run.proposal.summary}</blockquote>
+      <SimilarityNotice similarity={run.similarity} />
       <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} evidence={run.metrics?.evidence ?? []} />
       <div className="original-notice"><span>Observación recibida</span><p>{notice.text}</p></div>
       <AuditTimeline notice={notice} run={run} events={auditEvents} error={auditError} />
@@ -802,6 +865,7 @@ function Comparison({ riskMatrix, catalogs, catalogsError }: { riskMatrix: RiskM
       <StatusMessage error={error} />
       {result && (
         <>
+          <PrivacyNotice privacy={result.privacy} />
           <div className="comparison-grid enriched">
             {localResult && <ProviderComparisonCard item={localResult} riskMatrix={riskMatrix} />}
             <ComparisonAnalysis results={runs} humanReview={humanReview} />
