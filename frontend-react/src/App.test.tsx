@@ -89,6 +89,8 @@ describe("IAviso Seguro", () => {
     render(<App />);
     expect(screen.getByText("Revisión obligatoria")).toBeInTheDocument();
     expect(screen.getByText(/La IA propone/)).toBeInTheDocument();
+    expect(screen.getByText("Los datos permanecen en local")).toBeInTheDocument();
+    expect(screen.getByText("La petición se envía al proveedor")).toBeInTheDocument();
   });
 
   it("permite navegar a la bandeja", async () => {
@@ -298,6 +300,9 @@ describe("IAviso Seguro", () => {
     expect(screen.getByText("740 ms")).toBeInTheDocument();
     expect(screen.getByText("0.0004 USD")).toBeInTheDocument();
     expect(screen.getByText("94%")).toBeInTheDocument();
+    expect(screen.getAllByText("Acuerdo con técnico")).toHaveLength(2);
+    expect(screen.getAllByText("Salidas reparadas")).toHaveLength(2);
+    expect(screen.getByText("Aprobadas sin cambios")).toBeInTheDocument();
   });
 
   it("contrasta ambos modelos y registra la decisión humana", async () => {
@@ -331,8 +336,10 @@ describe("IAviso Seguro", () => {
     await user.click(screen.getByRole("button", { name: "Registrar referencia humana" }));
 
     expect(await screen.findByText("Referencia humana registrada")).toBeInTheDocument();
-    expect(screen.getByText("✓ 3/3")).toBeInTheDocument();
-    expect(screen.getByText("2/3")).toBeInTheDocument();
+    const verdict = screen.getByRole("table", { name: "Coincidencia de cada modelo con la referencia humana" });
+    expect(within(verdict).getByText("100%")).toBeInTheDocument();
+    expect(within(verdict).getByText("67%")).toBeInTheDocument();
+    expect(within(verdict).getByText("Departamento")).toBeInTheDocument();
   });
 
   it("permite consultar la matriz de riesgos activa", async () => {

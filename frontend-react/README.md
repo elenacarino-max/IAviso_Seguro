@@ -46,3 +46,8 @@ La bandeja rotula el departamento como «Destino propuesto» y conserva por
 separado la clasificación final decidida durante la revisión humana. La pestaña
 «Registro» consulta solo avisos cerrados y abre la misma ficha detallada en modo
 consulta, incluyendo decisión, destino final, evidencia y auditoría.
+
+El Panel denomina «Aprobadas sin cambios» exclusivamente a las propuestas
+confirmadas sin corrección y muestra «Acuerdo con técnico» por proveedor. La
+comparación de un caso representa la referencia humana en una tabla por campo
+con el porcentaje de coincidencia de Ollama y Gemini.

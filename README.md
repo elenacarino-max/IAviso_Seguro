@@ -2,48 +2,33 @@
 
 [![CI](https://github.com/elenacarino-max/IAviso_Seguro/actions/workflows/ci.yml/badge.svg)](https://github.com/elenacarino-max/IAviso_Seguro/actions/workflows/ci.yml)
 
-Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de riesgos laborales.
+Plataforma de triaje asistido para registrar, clasificar y revisar avisos
+sintéticos de riesgos laborales. Un modelo propone categoría, urgencia, resumen
+y departamento apoyándose en una matriz PRL y evidencia documental; una persona
+técnica conserva siempre la decisión final.
 
-## Estado
+> Proyecto académico y demostrativo. No sustituye una evaluación profesional ni
+> el protocolo de emergencias y no está preparado para procesar avisos reales.
 
-Fase 14 completada localmente: el MVP ofrece un recorrido reproducible desde una SPA React
-hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
-mismo contrato, herramienta y validación. Cada triaje conserva métricas de
-proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
-La API permite consultar la matriz activa, comparar ambos proveedores
-concurrentemente con una misma entrada sin crear dos
-avisos finales, guardar una única decisión humana sobre esa comparación y consultar
-un resumen histórico de evaluación por proveedor. Las propuestas se guardan en SQLite como `pending_review` y
-mantienen una revisión humana versionada. La interfaz React permite crear,
-consultar, revisar, explicar y comparar usando exclusivamente la API. La bandeja
-ofrece búsqueda, filtros tipados y paginación en servidor; cada aviso incorpora
-una línea temporal auditable con la propuesta, la transición de estado, el actor
-y cualquier corrección humana. También ejecuta un benchmark
-etiquetado de 14 casos con exactitud por campo, validez JSON, latencia media y coste medio. El panel histórico
-muestra aceptación, corrección, latencia, reparaciones, acuerdo humano, tokens, coste, intentos y parámetros;
-Streamlit se conserva
-como respaldo académico. La resolución
-operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
-La barra lateral muestra además la disponibilidad de FastAPI, el modelo de
-Ollama, Gemini y SQLite sin exponer URLs, rutas locales ni credenciales.
-Cada ejecución adjunta la regla de la matriz y fragmentos preventivos recuperados
-de un corpus local versionado; la interfaz muestra identificador, título,
-apartado, versión y extracto bajo «Evidencia consultada». GitHub Actions valida
-automáticamente backend y frontend en cada `push` y `pull_request`.
-La vista Matriz separa las reglas de clasificación del inventario documental
-RAG, publicado mediante `GET /api/v1/knowledge-base`.
+## Qué permite
 
-Los valores cerrados de categoría, urgencia y departamento se publican mediante
-`GET /api/v1/catalogs` y alimentan directamente los desplegables de revisión.
-El cliente React refleja los contratos Pydantic con uniones TypeScript y tipos
-específicos para propuestas, avisos, revisiones, comparaciones y métricas; no
-normaliza alias ni sustituye silenciosamente valores desconocidos.
+- Crear avisos con Ollama local o Gemini externo mediante el mismo contrato.
+- Revisar, corregir o rechazar propuestas con control de versión y auditoría.
+- Consultar en el Registro las decisiones cerradas y su departamento final.
+- Comparar ambos proveedores en paralelo sobre exactamente el mismo caso.
+- Ejecutar un benchmark sintético y consultar métricas históricas por modelo.
+- Ver la regla de matriz y las fuentes RAG realmente consultadas.
+- Supervisar FastAPI, Ollama, Gemini y SQLite desde la barra lateral.
 
-## Objetivo
+Las propuestas, revisiones, evidencias y métricas se conservan en SQLite.
+GitHub Actions ejecuta las pruebas de backend y frontend y compila la SPA en
+cada `push` y `pull_request`.
 
-Un trabajador describe una situación peligrosa. El sistema consulta una matriz de referencia, propone categoría, urgencia, resumen y departamento, y presenta la propuesta a un técnico para aprobarla, modificarla o rechazarla. La clasificación final requiere revisión humana.
+## Documentación
 
-
+- [Guía funcional](docs/GUIA_FUNCIONAL.md): pantallas, usuarios y recorridos.
+- [Arquitectura e integraciones](docs/ARQUITECTURA_E_INTEGRACIONES.md):
+  componentes, flujo de datos y relación con servicios externos.
 
 ## Arquitectura implementada
 
@@ -184,6 +169,7 @@ Comprobarla en `http://127.0.0.1:8000/docs` o mediante:
 Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/catalogs
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/risk-matrix
+Invoke-RestMethod http://127.0.0.1:8000/api/v1/knowledge-base
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/metrics/summary
 $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/notices?status=pending_review&urgency=alta&provider=local&page=1&limit=20'

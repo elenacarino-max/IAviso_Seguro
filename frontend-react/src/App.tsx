@@ -322,7 +322,7 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
               <label key={value} className={provider === value ? "selected" : ""}>
                 <input type="radio" name="provider" value={value} checked={provider === value} onChange={() => setProvider(value)} />
                 <span className="provider-icon">{value === "local" ? <Activity /> : <Sparkles />}</span>
-                <span><strong>{providerNames[value]}</strong><small>{value === "local" ? "Privacidad y control local" : "Referencia comparativa externa"}</small></span>
+                <span><strong>{providerNames[value]}</strong><small>{value === "local" ? "Los datos permanecen en local" : "La petición se envía al proveedor"}</small></span>
                 <i>{provider === value && <Check size={15} />}</i>
               </label>
             ))}
@@ -574,8 +574,8 @@ function Dashboard() {
 
   const cards = summary ? [
     ["Avisos procesados", summary.total_notices, Activity, "Entradas persistidas"],
-    ["IA aceptada", formatRate(summary.acceptance_rate), ShieldCheck, `${summary.approved} decisiones sin cambios`],
-    ["IA corregida", formatRate(summary.correction_rate), ClipboardCheck, `${summary.modified} correcciones humanas`],
+    ["Aprobadas sin cambios", formatRate(summary.acceptance_rate), ShieldCheck, `${summary.approved} propuestas confirmadas`],
+    ["Corregidas por técnico", formatRate(summary.correction_rate), ClipboardCheck, `${summary.modified} correcciones humanas`],
     ["Pendientes", summary.pending_review, Clock3, `${summary.reviewed} ya revisados`],
   ] as const : [];
 
@@ -595,8 +595,8 @@ function Dashboard() {
                 <header><div className="provider-icon">{provider.provider === "local" ? <Activity /> : <Sparkles />}</div><div><span>Proveedor evaluado</span><h2>{providerNames[provider.provider]}</h2><small>{provider.models.join(" · ") || "Modelo no registrado"}</small></div><strong>{provider.runs}<small>ejecuciones</small></strong></header>
                 <div className="provider-score-grid">
                   <div><span>Latencia media</span><strong>{formatDuration(provider.mean_latency_ms)}</strong></div>
-                  <div><span>Con reparación</span><strong>{formatRate(provider.repair_rate)}</strong></div>
-                  <div><span>Coincide humano</span><strong>{formatRate(provider.human_agreement_rate)}</strong><small>{provider.reviewed_runs} revisadas</small></div>
+                  <div title="Porcentaje de salidas que no cumplieron el contrato al primer intento y necesitaron corrección automática."><span>Salidas reparadas</span><strong>{formatRate(provider.repair_rate)}</strong></div>
+                  <div><span>Acuerdo con técnico</span><strong>{formatRate(provider.human_agreement_rate)}</strong><small>{provider.reviewed_runs} revisadas</small></div>
                   <div><span>JSON válido</span><strong>{formatRate(provider.json_valid_rate)}</strong><small>{provider.json_valid_observations} medidas</small></div>
                   <div><span>Tokens medios</span><strong>{provider.mean_total_tokens === null ? "—" : Math.round(provider.mean_total_tokens)}</strong><small>{provider.token_observations} medidas</small></div>
                   <div><span>Coste API medio</span><strong>{cost}</strong><small>{provider.cost_observations} medidas</small></div>
@@ -605,7 +605,7 @@ function Dashboard() {
               </article>;
             })}
           </div>
-          <p className="dashboard-definition"><ShieldCheck /> “Coincide humano” exige una aprobación sin cambios o coincidencia en los tres campos de una comparación revisada. Las ejecuciones incluyen avisos y comparaciones; los indicadores superiores corresponden solo al flujo de avisos.</p>
+          <p className="dashboard-definition"><ShieldCheck /> “Acuerdo con técnico” exige una aprobación sin cambios o coincidencia en categoría, urgencia y departamento dentro de una comparación revisada. “Aprobadas sin cambios” no incluye propuestas corregidas. Las ejecuciones incluyen avisos y comparaciones; los indicadores superiores corresponden solo al flujo de avisos.</p>
         </>
       )}
     </section>
@@ -845,6 +845,20 @@ function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProvi
       ? null
       : local.metrics.repair_attempts < external.metrics.repair_attempts ? "local" as const : "external" as const
     : null;
+  const verdictFields = humanReview ? [
+    { label: "Categoría", matches: (proposal: TriageProposal) => proposal.category === humanReview.category },
+    { label: "Urgencia", matches: (proposal: TriageProposal) => proposal.urgency === humanReview.urgency },
+    { label: "Departamento", matches: (proposal: TriageProposal) => proposal.department === humanReview.department },
+  ] : [];
+  const verdictProviders = results.map((item) => {
+    const proposal = item.result;
+    return {
+      ...item,
+      matches: proposal
+        ? verdictFields.filter((field) => field.matches(proposal)).length
+        : 0,
+    };
+  });
 
   return <article className="comparison-analysis">
     <header><GitCompareArrows /><div><small>Comparación</small><h2>Lectura directa</h2></div></header>
@@ -856,10 +870,18 @@ function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProvi
       <div><span>Menos reparaciones</span><strong>{fewerRepairs ? providerNames[fewerRepairs] : "Empate"}</strong><small>{local?.metrics.repair_attempts ?? "—"} vs {external?.metrics.repair_attempts ?? "—"}</small></div>
       <div><span>Coste API</span><small>Ollama <b>{local?.metrics.api_cost ?? "—"}</b></small><small>Gemini <b>{external?.metrics.api_cost ?? "—"} {external?.metrics.api_cost_currency ?? ""}</b></small></div>
     </div>
-    {humanReview && <div className="human-verdict"><span>Decisión humana</span><strong>{optionLabel(humanReview.category)} · {optionLabel(humanReview.urgency)}</strong>{results.map((item) => {
-      const matches = item.result ? [item.result.category === humanReview.category, item.result.urgency === humanReview.urgency, item.result.department === humanReview.department].filter(Boolean).length : 0;
-      return <div key={item.provider}><span>{providerNames[item.provider]}</span><b className={matches === 3 ? "match" : "mismatch"}>{matches === 3 ? "✓ 3/3" : `${matches}/3`}</b></div>;
-    })}</div>}
+    {humanReview && <div className="human-verdict">
+      <span>Referencia humana</span>
+      <strong>{optionLabel(humanReview.category)} · {optionLabel(humanReview.urgency)} · {optionLabel(humanReview.department)}</strong>
+      <table aria-label="Coincidencia de cada modelo con la referencia humana">
+        <thead><tr><th>Campo</th>{verdictProviders.map((item) => <th key={item.provider}>{item.provider === "local" ? "Ollama" : "Gemini"}</th>)}</tr></thead>
+        <tbody>{verdictFields.map((field) => <tr key={field.label}><th>{field.label}</th>{verdictProviders.map((item) => {
+          const matches = item.result ? field.matches(item.result) : null;
+          return <td key={item.provider} className={matches === null ? "" : matches ? "match" : "mismatch"} aria-label={matches === null ? "Sin resultado" : matches ? "Coincide" : "No coincide"}>{matches === null ? "—" : matches ? "✓" : "✕"}</td>;
+        })}</tr>)}</tbody>
+        <tfoot><tr><th>Coincidencia</th>{verdictProviders.map((item) => <td key={item.provider} className={item.matches === verdictFields.length ? "match" : "mismatch"}>{item.result ? `${Math.round((item.matches / verdictFields.length) * 100)}%` : "—"}</td>)}</tr></tfoot>
+      </table>
+    </div>}
   </article>;
 }
 

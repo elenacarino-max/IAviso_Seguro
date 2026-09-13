@@ -9,9 +9,13 @@ Rutas HTTP:
   `pending_review` y adjunta la matriz y documentos preventivos consultados.
 - `GET /api/v1/catalogs`: publica las categorías, urgencias y departamentos
   cerrados que aceptan los contratos Pydantic y los desplegables de React.
+- `GET /api/v1/risk-matrix`: publica la matriz didáctica activa.
+- `GET /api/v1/knowledge-base`: publica la versión y el inventario de fuentes
+  RAG sin exponer los fragmentos completos.
 - `GET /api/v1/notices`: devuelve una página de avisos con sus ejecuciones,
   propuestas y revisiones; admite `search`, `status`, `urgency`, `category`,
-  `provider`, `page` y `limit` como filtros tipados.
+  `provider`, `closed`, `page` y `limit` como filtros tipados.
+  `closed=true` alimenta el Registro y excluye pendientes antes de paginar.
 - `GET /api/v1/notices/{notice_id}/audit-events`: devuelve cronológicamente los
   eventos persistidos de creación y revisión del aviso.
 - `POST /api/v1/notices/{notice_id}/reviews`: aprueba, modifica o rechaza la

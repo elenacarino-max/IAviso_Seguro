@@ -23,7 +23,11 @@ dist/
 # Datos locales y registros
 data/local/*
 !data/local/.gitkeep
-docs/
+# La documentación de trabajo permanece local; las dos guías públicas sí se
+# versionan y se enlazan desde el README.
+docs/*
+!docs/GUIA_FUNCIONAL.md
+!docs/ARQUITECTURA_E_INTEGRACIONES.md
 *.db
 *.db-*
 *.sqlite
