@@ -8,6 +8,7 @@ import type {
   ErrorCode,
   EvaluationReport,
   HealthResponse,
+  KnowledgeBaseSummary,
   MetricsSummary,
   AuditEventRecord,
   NoticePage,
@@ -117,6 +118,7 @@ export const api = {
     const params = new URLSearchParams();
     if (query.search?.trim()) params.set("search", query.search.trim());
     if (query.status) params.set("status", query.status);
+    if (query.closed !== undefined) params.set("closed", String(query.closed));
     if (query.urgency) params.set("urgency", query.urgency);
     if (query.provider) params.set("provider", query.provider);
     if (query.category) params.set("category", query.category);
@@ -132,6 +134,10 @@ export const api = {
 
   async getRiskMatrix(): Promise<RiskMatrixDocument> {
     return request<RiskMatrixDocument>("/api/v1/risk-matrix");
+  },
+
+  async getKnowledgeBase(): Promise<KnowledgeBaseSummary> {
+    return request<KnowledgeBaseSummary>("/api/v1/knowledge-base");
   },
 
   async reviewNotice(noticeId: string, input: ReviewInput): Promise<ReviewResponse> {

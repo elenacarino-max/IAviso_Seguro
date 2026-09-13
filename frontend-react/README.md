@@ -38,3 +38,11 @@ consultada» con fuente, título, apartado, versión y extracto. La interfaz no
 deduce referencias a partir de la justificación del modelo: muestra únicamente
 las seleccionadas por el backend. Los dos formularios comparten el límite de
 4000 caracteres del contrato de entrada.
+
+La vista «Matriz» representa dos capas distintas: las reglas PRL proponen la
+clasificación y el departamento, mientras que el bloque «RAG preventivo»
+consulta `GET /api/v1/knowledge-base` para mostrar el corpus documental activo.
+La bandeja rotula el departamento como «Destino propuesto» y conserva por
+separado la clasificación final decidida durante la revisión humana. La pestaña
+«Registro» consulta solo avisos cerrados y abre la misma ficha detallada en modo
+consulta, incluyendo decisión, destino final, evidencia y auditoría.

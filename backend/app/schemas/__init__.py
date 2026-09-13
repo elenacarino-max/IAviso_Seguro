@@ -3,7 +3,13 @@
 from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
 from .errors import ErrorCode, ErrorDetail, ErrorResponse
 from .health import HealthResponse, ServiceHealth, ServiceId, ServiceStatus
-from .knowledge import KnowledgeBase, KnowledgeDocument, KnowledgeEvidence
+from .knowledge import (
+    KnowledgeBase,
+    KnowledgeBaseSummary,
+    KnowledgeDocument,
+    KnowledgeEvidence,
+    KnowledgeSourceSummary,
+)
 from .metrics import (
     ComparisonProviderResult,
     ComparisonRequest,
@@ -62,8 +68,10 @@ __all__ = [
     "ExecutionMetrics",
     "HealthResponse",
     "KnowledgeBase",
+    "KnowledgeBaseSummary",
     "KnowledgeDocument",
     "KnowledgeEvidence",
+    "KnowledgeSourceSummary",
     "NoticeRecord",
     "NoticePage",
     "MetricsSummary",

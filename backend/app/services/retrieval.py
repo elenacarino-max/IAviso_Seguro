@@ -12,8 +12,10 @@ from pydantic import ValidationError
 from backend.app.schemas import (
     Category,
     KnowledgeBase,
+    KnowledgeBaseSummary,
     KnowledgeDocument,
     KnowledgeEvidence,
+    KnowledgeSourceSummary,
 )
 
 from .errors import InvalidKnowledgeBaseError
@@ -126,6 +128,25 @@ class PreventionKnowledgeRetriever:
                 score=score,
             )
             for score, document in ranked[: self._max_sources]
+        )
+
+    def summary(self) -> KnowledgeBaseSummary:
+        """Publica inventario y versión; los fragmentos completos quedan internos."""
+
+        knowledge_base = self.document()
+        return KnowledgeBaseSummary(
+            version=knowledge_base.version,
+            disclaimer=knowledge_base.disclaimer,
+            document_count=len(knowledge_base.documents),
+            sources=tuple(
+                KnowledgeSourceSummary(
+                    source_id=document.source_id,
+                    title=document.title,
+                    section=document.section,
+                    categories=document.categories,
+                )
+                for document in knowledge_base.documents
+            ),
         )
 
     def _load(self) -> KnowledgeBase:

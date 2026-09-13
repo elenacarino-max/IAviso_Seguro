@@ -16,6 +16,27 @@ const riskMatrix = {
   }],
 };
 
+const knowledgeBase = {
+  version: "1.0.0",
+  disclaimer: "Corpus sintético para demostración.",
+  source_format: "versioned_json",
+  document_count: 2,
+  sources: [
+    {
+      source_id: "PRL-EL-04",
+      title: "Procedimiento interno de riesgo eléctrico",
+      section: "Apartado 3.2",
+      categories: ["riesgo_electrico"],
+    },
+    {
+      source_id: "GUIA-CUADROS-02",
+      title: "Guía interna de cuadros eléctricos",
+      section: "Inspección preventiva",
+      categories: ["riesgo_electrico"],
+    },
+  ],
+};
+
 const catalogs = {
   categories: [
     "riesgo_electrico",
@@ -319,6 +340,9 @@ describe("IAviso Seguro", () => {
       if (String(input) === "/api/v1/risk-matrix") {
         return new Response(JSON.stringify(riskMatrix), { status: 200 });
       }
+      if (String(input) === "/api/v1/knowledge-base") {
+        return new Response(JSON.stringify(knowledgeBase), { status: 200 });
+      }
       return new Response(JSON.stringify([]), { status: 200 });
     });
 
@@ -328,9 +352,14 @@ describe("IAviso Seguro", () => {
     expect(await screen.findByRole("heading", { name: "Matriz de riesgos visible y auditable." })).toBeInTheDocument();
     expect(screen.getByText("RM-ELEC-001")).toBeInTheDocument();
     expect(screen.getByText(/ubicación es contexto libre opcional/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "RAG preventivo" })).toBeInTheDocument();
+    expect(screen.getByText("data/knowledge/prevention_docs.v1.json")).toBeInTheDocument();
+    expect(screen.getByText(/PDF y DOCX no se leen directamente todavía/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByText("Ver inventario de fuentes"));
+    expect(screen.getByText("Procedimiento interno de riesgo eléctrico")).toBeInTheDocument();
   });
 
-  it("filtra la bandeja y muestra la corrección en la auditoría", async () => {
+  it("muestra los avisos cerrados y su decisión en el registro", async () => {
     const reviewedNotice = {
       id: "n-reviewed",
       text: "Cable recalentado junto al cuadro principal.",
@@ -358,8 +387,8 @@ describe("IAviso Seguro", () => {
         { id: 2, notice_id: "n-reviewed", triage_run_id: "r-reviewed", event_type: "review_completed", previous_status: "pending_review", new_status: "modified", actor: "Técnica PRL", created_at: "2026-09-11T10:48:00Z" },
       ]), { status: 200 });
       if (url.startsWith("/api/v1/notices")) {
-        const status = new URL(`http://test${url}`).searchParams.get("status");
-        const items = status === "modified" ? [reviewedNotice] : [];
+        const params = new URL(`http://test${url}`).searchParams;
+        const items = params.get("closed") === "true" ? [reviewedNotice] : [];
         return new Response(JSON.stringify({ items, page: 1, limit: 20, total: items.length, pages: items.length ? 1 : 0 }), { status: 200 });
       }
       return new Response(JSON.stringify([]), { status: 200 });
@@ -367,14 +396,15 @@ describe("IAviso Seguro", () => {
 
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole("button", { name: /Bandeja/ }));
-    await user.selectOptions(screen.getByRole("combobox", { name: "Estado" }), "modified");
+    await user.click(screen.getByRole("button", { name: /Registro/ }));
+    expect(await screen.findByRole("heading", { name: "Registro de decisiones cerradas" })).toBeInTheDocument();
     await user.click(await screen.findByRole("button", { name: /Cable recalentado/ }));
 
     expect(await screen.findByText("Revisado por Técnica PRL")).toBeInTheDocument();
     expect(screen.getByText("Clasificación corregida")).toBeInTheDocument();
     expect(screen.getByText("Urgencia: Alta → Crítica")).toBeInTheDocument();
-    expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("status=modified"))).toBe(true);
+    expect(screen.getByText(/Clasificación final: Riesgo eléctrico · Crítica · Seguridad/)).toBeInTheDocument();
+    expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("closed=true"))).toBe(true);
   });
 
   it("limita las correcciones humanas a los catálogos del backend", async () => {

@@ -557,13 +557,18 @@ class SQLiteNoticeRepository:
         *,
         search: str | None = None,
         status: ProposalStatus | None = None,
+        closed: bool | None = None,
         urgency: Urgency | None = None,
         provider: Provider | None = None,
         category: Category | None = None,
         page: int = 1,
         limit: int = 20,
     ) -> NoticePage:
-        """Filtra y pagina avisos manteniendo las ejecuciones coincidentes."""
+        """Filtra y pagina avisos manteniendo las ejecuciones coincidentes.
+
+        El filtro closed separa el registro histórico de la cola pendiente
+        antes de calcular totales y páginas; la SPA no pagina una mezcla.
+        """
 
         needle = search.strip().casefold() if search else None
         filtered: list[NoticeRecord] = []
@@ -586,6 +591,10 @@ class SQLiteNoticeRepository:
                     if value
                 ).casefold()
                 if status is not None and run.status != status:
+                    continue
+                if closed is True and run.status == "pending_review":
+                    continue
+                if closed is False and run.status != "pending_review":
                     continue
                 if urgency is not None and effective_urgency != urgency:
                     continue

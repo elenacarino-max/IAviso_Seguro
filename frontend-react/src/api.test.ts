@@ -79,6 +79,28 @@ describe("cliente de FastAPI", () => {
     );
   });
 
+  it("consulta el inventario público del RAG", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          version: "1.0.0",
+          disclaimer: "Corpus sintético.",
+          source_format: "versioned_json",
+          document_count: 0,
+          sources: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await api.getKnowledgeBase();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/knowledge-base",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
   it("consulta los catálogos cerrados mediante la API", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify({
@@ -104,6 +126,7 @@ describe("cliente de FastAPI", () => {
     await api.listNotices({
       search: "cuadro eléctrico",
       status: "pending_review",
+      closed: false,
       urgency: "alta",
       category: "riesgo_electrico",
       provider: "local",
@@ -112,7 +135,7 @@ describe("cliente de FastAPI", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/notices?search=cuadro+el%C3%A9ctrico&status=pending_review&urgency=alta&provider=local&category=riesgo_electrico&page=2&limit=20",
+      "/api/v1/notices?search=cuadro+el%C3%A9ctrico&status=pending_review&closed=false&urgency=alta&provider=local&category=riesgo_electrico&page=2&limit=20",
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });

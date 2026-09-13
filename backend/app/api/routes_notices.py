@@ -31,6 +31,15 @@ def list_notices(
     ],
     search: Annotated[str | None, Query(max_length=200)] = None,
     status: ProposalStatus | None = None,
+    closed: Annotated[
+        bool | None,
+        Query(
+            description=(
+                "true devuelve decisiones cerradas; false devuelve propuestas "
+                "pendientes"
+            )
+        ),
+    ] = None,
     urgency: Urgency | None = None,
     provider: Provider | None = None,
     category: Category | None = None,
@@ -40,6 +49,7 @@ def list_notices(
     return repository.query_notices(
         search=search,
         status=status,
+        closed=closed,
         urgency=urgency,
         provider=provider,
         category=category,

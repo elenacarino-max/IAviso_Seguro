@@ -75,6 +75,25 @@ class KnowledgeBase(KnowledgeContract):
         return self
 
 
+class KnowledgeSourceSummary(KnowledgeContract):
+    """Metadatos públicos de una fuente sin exponer contenido innecesario."""
+
+    source_id: SourceId
+    title: KnowledgeText
+    section: KnowledgeText
+    categories: tuple[Category, ...]
+
+
+class KnowledgeBaseSummary(KnowledgeContract):
+    """Vista segura del corpus activo para explicar el RAG en la interfaz."""
+
+    version: KnowledgeVersion
+    disclaimer: KnowledgeText
+    source_format: Literal["versioned_json"] = "versioned_json"
+    document_count: int = Field(strict=True, ge=1)
+    sources: tuple[KnowledgeSourceSummary, ...]
+
+
 class KnowledgeEvidence(KnowledgeContract):
     """Fuente elegida por el backend; nunca procede del JSON generado por el LLM."""
 

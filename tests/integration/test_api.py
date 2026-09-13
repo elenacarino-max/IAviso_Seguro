@@ -161,6 +161,22 @@ def test_risk_matrix_endpoint_exposes_the_validated_catalog():
     assert "no es normativa" in body["disclaimer"].lower()
 
 
+def test_knowledge_base_endpoint_exposes_only_safe_source_metadata():
+    response = client.get("/api/v1/knowledge-base")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == "1.0.0"
+    assert body["source_format"] == "versioned_json"
+    assert body["document_count"] == 10
+    assert len(body["sources"]) == body["document_count"]
+    assert {source["source_id"] for source in body["sources"]} >= {
+        "PRL-EL-04",
+        "GUIA-CUADROS-02",
+    }
+    assert all("content" not in source for source in body["sources"])
+
+
 @pytest.mark.parametrize("provider", ["local", "external"])
 def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider):
     response = client.post(
@@ -484,6 +500,12 @@ def test_notices_support_typed_filters_search_and_pagination():
     assert paged.json()["total"] == 2
     assert paged.json()["pages"] == 2
     assert len(paged.json()["items"]) == 1
+    closed = client.get("/api/v1/notices", params={"closed": "true"})
+    assert closed.json()["total"] == 1
+    assert closed.json()["items"][0]["id"] == first["notice_id"]
+    pending = client.get("/api/v1/notices", params={"closed": "false"})
+    assert pending.json()["total"] == 1
+    assert pending.json()["items"][0]["triage_runs"][0]["status"] == "pending_review"
     assert client.get("/api/v1/notices", params={"status": "otro"}).status_code == 422
     assert client.get("/api/v1/notices", params={"limit": 101}).status_code == 422
 

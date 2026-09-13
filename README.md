@@ -6,7 +6,7 @@ Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de 
 
 ## Estado
 
-Fase 12 completada localmente: el MVP ofrece un recorrido reproducible desde una SPA React
+Fase 14 completada localmente: el MVP ofrece un recorrido reproducible desde una SPA React
 hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
@@ -30,6 +30,8 @@ Cada ejecución adjunta la regla de la matriz y fragmentos preventivos recuperad
 de un corpus local versionado; la interfaz muestra identificador, título,
 apartado, versión y extracto bajo «Evidencia consultada». GitHub Actions valida
 automáticamente backend y frontend en cada `push` y `pull_request`.
+La vista Matriz separa las reglas de clasificación del inventario documental
+RAG, publicado mediante `GET /api/v1/knowledge-base`.
 
 Los valores cerrados de categoría, urgencia y departamento se publican mediante
 `GET /api/v1/catalogs` y alimentan directamente los desplegables de revisión.
@@ -289,6 +291,19 @@ el corpus falta o incumple su contrato, la API devuelve el error estable
 `invalid_knowledge_base`; no continúa con evidencia incompleta. El resumen de la
 propuesta mantiene sin cambios la validación de exactamente diez palabras.
 
+El corpus activo se aloja localmente en
+`data/knowledge/prevention_docs.v1.json`. La API
+`GET /api/v1/knowledge-base` publica su versión e inventario de fuentes sin
+exponer los fragmentos completos. La pantalla Matriz muestra ambos niveles:
+la matriz decide la clasificación orientativa y el RAG aporta documentación de
+apoyo después de validar la categoría.
+
+No existe todavía una carga directa de PDF o DOCX. Para añadir esos formatos hay
+que implementar una ingestión que extraiga texto, lo divida en fragmentos,
+asigne identificador, título, apartado, categorías y palabras clave, valide el
+resultado y genere una nueva versión del JSON. Copiar un archivo a la carpeta no
+hace que el sistema lo consulte automáticamente.
+
 ## Métricas y resiliencia
 
 El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
@@ -317,6 +332,21 @@ tres campos con su referencia humana. Una corrección, rechazo, discrepancia o
 ejecución fallida cuentan como desacuerdo cuando existe referencia. Los campos
 sin observaciones permanecen en `null`; la validez JSON, los tokens y el coste
 se acompañan de su número de observaciones.
+
+El «benchmark» es una prueba comparativa controlada: ejecuta los mismos 14 casos
+sintéticos etiquetados con Ollama y Gemini y contrasta exactitud de categoría,
+urgencia y departamento, validez JSON, latencia y coste. Sirve para comparar
+estos proveedores dentro del proyecto; no demuestra cuál es el mejor modelo
+para cualquier tarea.
+
+SQLite ya conserva la tarjeta operativa completa: texto y ubicación del aviso,
+propuesta del agente, departamento propuesto, métricas y evidencia, decisión
+humana y clasificación final. La bandeja identifica el destino propuesto y la
+pestaña «Registro» reúne los avisos cerrados con su decisión, destino final,
+evidencia y auditoría. Un
+despliegue que envíe tarjetas a sistemas departamentales debería añadir una cola
+de salida transaccional y usar exclusivamente el departamento final validado;
+el envío externo sigue fuera del MVP.
 
 La SPA React ofrece alta de avisos, bandeja profesional, revisión
 aprobada/modificada/rechazada, matriz de referencia, panel de evaluación y comparación

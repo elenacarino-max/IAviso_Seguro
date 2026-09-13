@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.routes_catalogs import router as catalogs_router
 from backend.app.api.routes_health import router as health_router
+from backend.app.api.routes_knowledge import router as knowledge_router
 from backend.app.api.routes_metrics import router as metrics_router
 from backend.app.api.routes_comparisons import router as comparisons_router
 from backend.app.api.routes_evaluations import router as evaluations_router
@@ -44,6 +45,7 @@ def create_app() -> FastAPI:
     application.include_router(comparisons_router)
     application.include_router(evaluations_router)
     application.include_router(risk_matrix_router)
+    application.include_router(knowledge_router)
 
     frontend_dist = Path(__file__).resolve().parents[2] / "frontend-react" / "dist"
     if frontend_dist.is_dir():

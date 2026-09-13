@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   Clock3,
   GitCompareArrows,
+  History,
   Inbox,
   LoaderCircle,
   MapPin,
@@ -34,6 +35,7 @@ import type {
   Department,
   EvaluationReport,
   HealthResponse,
+  KnowledgeBaseSummary,
   KnowledgeEvidence,
   MetricsSummary,
   NoticeRecord,
@@ -53,6 +55,7 @@ import type {
 const NAV: Array<{ id: View; label: string; hint: string; icon: typeof Plus }> = [
   { id: "new", label: "Nuevo aviso", hint: "Clasificar", icon: Plus },
   { id: "inbox", label: "Bandeja", hint: "Revisar", icon: Inbox },
+  { id: "history", label: "Registro", hint: "Consultar", icon: History },
   { id: "dashboard", label: "Panel", hint: "Supervisar", icon: BarChart3 },
   { id: "matrix", label: "Matriz", hint: "Consultar", icon: BookOpen },
   { id: "compare", label: "Comparación", hint: "Evaluar", icon: GitCompareArrows },
@@ -61,7 +64,6 @@ const NAV: Array<{ id: View; label: string; hint: string; icon: typeof Plus }> =
 const providerNames: Record<Provider, string> = { local: "Ollama · local", external: "Gemini · externo" };
 const providers = ["local", "external"] satisfies readonly Provider[];
 const reviewDecisions = ["approved", "modified", "rejected"] satisfies readonly ReviewDecision[];
-const proposalStatuses = ["pending_review", ...reviewDecisions] satisfies readonly ProposalStatus[];
 const statusLabels: Record<ProposalStatus, string> = {
   pending_review: "Pendiente",
   approved: "Aprobado",
@@ -142,6 +144,8 @@ function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [riskMatrix, setRiskMatrix] = useState<RiskMatrixDocument | null>(null);
   const [riskMatrixError, setRiskMatrixError] = useState<unknown>(null);
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeBaseSummary | null>(null);
+  const [knowledgeBaseError, setKnowledgeBaseError] = useState<unknown>(null);
   const [catalogs, setCatalogs] = useState<CatalogsResponse | null>(null);
   const [catalogsError, setCatalogsError] = useState<unknown>(null);
 
@@ -163,6 +167,7 @@ function App() {
 
   useEffect(() => {
     void api.getRiskMatrix().then(setRiskMatrix).catch(setRiskMatrixError);
+    void api.getKnowledgeBase().then(setKnowledgeBase).catch(setKnowledgeBaseError);
     void api.getCatalogs().then(setCatalogs).catch(setCatalogsError);
   }, []);
 
@@ -230,9 +235,17 @@ function App() {
           <div className="human-badge"><span>HITL</span> Revisión obligatoria</div>
         </header>
         {view === "new" && <NewNotice riskMatrix={riskMatrix} onCreated={() => navigate("inbox")} />}
-        {view === "inbox" && <InboxView riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onPendingChange={setPendingCount} />}
+        {view === "inbox" && <InboxView key="inbox" mode="pending" riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onPendingChange={setPendingCount} />}
+        {view === "history" && <InboxView key="history" mode="history" riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onPendingChange={setPendingCount} />}
         {view === "dashboard" && <Dashboard />}
-        {view === "matrix" && <MatrixView matrix={riskMatrix} error={riskMatrixError} />}
+        {view === "matrix" && (
+          <MatrixView
+            matrix={riskMatrix}
+            error={riskMatrixError}
+            knowledgeBase={knowledgeBase}
+            knowledgeError={knowledgeBaseError}
+          />
+        )}
         {view === "compare" && <Comparison riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} />}
       </main>
     </div>
@@ -354,9 +367,12 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
   );
 }
 
-function InboxView({ riskMatrix, catalogs, catalogsError, onPendingChange }: { riskMatrix: RiskMatrixDocument | null; catalogs: CatalogsResponse | null; catalogsError: unknown; onPendingChange: (value: number) => void }) {
+function InboxView({ mode, riskMatrix, catalogs, catalogsError, onPendingChange }: { mode: "pending" | "history"; riskMatrix: RiskMatrixDocument | null; catalogs: CatalogsResponse | null; catalogsError: unknown; onPendingChange: (value: number) => void }) {
+  const initialQuery: NoticeQuery = mode === "pending"
+    ? { status: "pending_review", page: 1, limit: 20 }
+    : { closed: true, page: 1, limit: 20 };
   const [pageData, setPageData] = useState<NoticePage>({ items: [], page: 1, limit: 20, total: 0, pages: 0 });
-  const [query, setQuery] = useState<NoticeQuery>({ status: "pending_review", page: 1, limit: 20 });
+  const [query, setQuery] = useState<NoticeQuery>(initialQuery);
   const [searchInput, setSearchInput] = useState("");
   const [selected, setSelected] = useState<{ notice: NoticeRecord; run: TriageRunRecord } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -391,14 +407,18 @@ function InboxView({ riskMatrix, catalogs, catalogsError, onPendingChange }: { r
   const resetFilters = () => {
     setSearchInput("");
     setSelected(null);
-    setQuery({ status: "pending_review", page: 1, limit: 20 });
+    setQuery(initialQuery);
   };
+  const isHistory = mode === "history";
+  const availableStatuses = isHistory ? reviewDecisions : ["pending_review"] as const;
 
   return (
     <section className="page-content">
       <div className="intro-row">
-        <PageIntro eyebrow="02 · Revisión" title="Bandeja de decisión técnica">
-          Examina la propuesta original y deja una decisión humana trazable.
+        <PageIntro eyebrow={isHistory ? "03 · Registro" : "02 · Revisión"} title={isHistory ? "Registro de decisiones cerradas" : "Bandeja de decisión técnica"}>
+          {isHistory
+            ? "Consulta los avisos cerrados, la decisión tomada y el departamento al que quedaron derivados."
+            : "Examina la propuesta original y deja una decisión humana trazable."}
         </PageIntro>
         <button className="secondary-action" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} /> Actualizar</button>
       </div>
@@ -409,7 +429,7 @@ function InboxView({ riskMatrix, catalogs, catalogsError, onPendingChange }: { r
           <button className="secondary-action" type="submit">Buscar</button>
         </form>
         <div className="filter-grid">
-          <label>Estado<select value={query.status ?? ""} onChange={(event) => updateQuery({ status: event.target.value ? catalogValue(event.target.value, proposalStatuses) : undefined })}><option value="">Todos</option>{proposalStatuses.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label>
+          <label>Estado<select value={query.status ?? ""} disabled={!isHistory} onChange={(event) => updateQuery({ status: event.target.value ? catalogValue(event.target.value, availableStatuses) : undefined })}><option value="">{isHistory ? "Todos los cerrados" : "Pendiente"}</option>{availableStatuses.map((value) => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label>
           <label>Urgencia<select value={query.urgency ?? ""} onChange={(event) => updateQuery({ urgency: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.urgencies) : undefined })}><option value="">Todas</option>{catalogs?.urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
           <label>Categoría<select value={query.category ?? ""} onChange={(event) => updateQuery({ category: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.categories) : undefined })}><option value="">Todas</option>{catalogs?.categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
           <label>Motor<select value={query.provider ?? ""} onChange={(event) => updateQuery({ provider: event.target.value ? catalogValue(event.target.value, providers) : undefined })}><option value="">Todos</option>{providers.map((value) => <option key={value} value={value}>{providerNames[value]}</option>)}</select></label>
@@ -418,24 +438,25 @@ function InboxView({ riskMatrix, catalogs, catalogsError, onPendingChange }: { r
       </div>
       <div className="inbox-layout">
         <div className="queue">
-          <div className="queue-head"><span>Resultados</span><b>{pageData.total}</b></div>
+          <div className="queue-head"><span>{isHistory ? "Avisos cerrados" : "Pendientes"}</span><b>{pageData.total}</b></div>
           {loading && <Empty icon={<LoaderCircle className="spin" />} title="Consultando avisos" text="Recuperando la bandeja desde la API…" />}
           {!loading && !error && entries.length === 0 && <Empty icon={<ClipboardCheck />} title="Sin resultados" text="No hay avisos que coincidan con los filtros activos." />}
           {entries.map(({ notice, run }) => {
             const final = run.review?.final_classification;
             const category = final?.category ?? run.proposal.category;
             const urgency = final?.urgency ?? run.proposal.urgency;
+            const destination = final?.department ?? run.proposal.department;
             return <button key={run.id} className={`queue-item ${selected?.run.id === run.id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
               <div className="queue-top"><span className={`urgency ${urgencyTone(urgency)}`}>{optionLabel(urgency)}</span><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
               <strong>{optionLabel(category)}</strong>
               <p>{notice.text}</p>
-              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span>{providerNames[run.provider]}</span></footer>
+              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span><UserRoundCheck size={14} /> {run.status === "rejected" ? "Destino propuesto" : isHistory ? "Derivado a" : "Destino"}: {optionLabel(destination)}</span><span>{providerNames[run.provider]}</span></footer>
             </button>;
           })}
           {!loading && pageData.total > 0 && <nav className="queue-pagination" aria-label="Paginación de avisos"><button type="button" disabled={pageData.page <= 1} onClick={() => updateQuery({ page: pageData.page - 1 })}>Anterior</button><span>Página {pageData.page} de {Math.max(pageData.pages, 1)}</span><button type="button" disabled={pageData.page >= pageData.pages} onClick={() => updateQuery({ page: pageData.page + 1 })}>Siguiente</button></nav>}
         </div>
         <div className="review-stage">
-          {selected ? <ReviewPanel key={selected.run.id} {...selected} riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={<UserRoundCheck />} title="Selecciona una propuesta" text="Aquí podrás contrastar la observación y registrar tu decisión." />}
+          {selected ? <ReviewPanel key={selected.run.id} {...selected} riskMatrix={riskMatrix} catalogs={catalogs} catalogsError={catalogsError} onDone={() => { setSelected(null); void load(); }} /> : <Empty icon={isHistory ? <History /> : <UserRoundCheck />} title={isHistory ? "Selecciona un aviso cerrado" : "Selecciona una propuesta"} text={isHistory ? "Aquí verás la propuesta, la decisión y el destino final del aviso." : "Aquí podrás contrastar la observación y registrar tu decisión."} />}
         </div>
       </div>
     </section>
@@ -484,7 +505,7 @@ function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone 
     <form className="review-panel" onSubmit={submit}>
       <div className="review-heading"><span>Propuesta original</span><small>v{run.version} · {run.provider}</small></div>
       <h2>{optionLabel(run.proposal.category)}</h2>
-      <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span>{optionLabel(run.proposal.department)}</span></div>
+      <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span className="routing-destination"><UserRoundCheck size={14} /> Destino propuesto: {optionLabel(run.proposal.department)}</span></div>
       <blockquote>{run.proposal.summary}</blockquote>
       <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} evidence={run.metrics?.evidence ?? []} />
       <div className="original-notice"><span>Observación recibida</span><p>{notice.text}</p></div>
@@ -515,7 +536,7 @@ function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone 
         </div>
         <StatusMessage error={error} />
         <button className="primary-action" disabled={loading || !reviewer.trim() || !comment.trim() || (decision === "modified" && !catalogs)}>{loading ? <><LoaderCircle className="spin" /> Guardando…</> : <>Registrar decisión <Check /></>}</button>
-      </> : <div className={`review-completed ${run.status}`}>{run.status === "rejected" ? <X /> : <Check />}<div><strong>{statusLabels[run.status]}</strong><p>{run.review?.reviewer ?? "Revisión registrada"} · {run.review?.comment ?? "Sin comentario"}</p>{run.review?.final_classification && <p>Clasificación final: {optionLabel(run.review.final_classification.category)} · {optionLabel(run.review.final_classification.urgency)} · {optionLabel(run.review.final_classification.department)}</p>}</div></div>}
+      </> : <div className={`review-completed ${run.status}`}>{run.status === "rejected" ? <X /> : <Check />}<div><strong>{statusLabels[run.status]}</strong><p>{run.review?.reviewer ?? "Revisión registrada"} · {run.review?.comment ?? "Sin comentario"}</p>{run.review?.final_classification ? <><p>Clasificación final: {optionLabel(run.review.final_classification.category)} · {optionLabel(run.review.final_classification.urgency)} · {optionLabel(run.review.final_classification.department)}</p><p className="final-destination">Derivado a {optionLabel(run.review.final_classification.department)}</p></> : <p className="final-destination">Aviso rechazado · sin derivación departamental</p>}</div></div>}
     </form>
   );
 }
@@ -654,7 +675,17 @@ function ProposalExplanation({
   );
 }
 
-function MatrixView({ matrix, error }: { matrix: RiskMatrixDocument | null; error: unknown }) {
+function MatrixView({
+  matrix,
+  error,
+  knowledgeBase,
+  knowledgeError,
+}: {
+  matrix: RiskMatrixDocument | null;
+  error: unknown;
+  knowledgeBase: KnowledgeBaseSummary | null;
+  knowledgeError: unknown;
+}) {
   const rules = Array.isArray(matrix?.rules) ? matrix.rules : [];
   const urgencyCatalog = [...new Set(rules.map((rule) => rule.recommended_urgency))];
   const departmentCatalog = [...new Set(rules.map((rule) => rule.department))];
@@ -665,6 +696,7 @@ function MatrixView({ matrix, error }: { matrix: RiskMatrixDocument | null; erro
         Consulta las mismas reglas que utiliza el motor para proponer categoría, urgencia y departamento.
       </PageIntro>
       <StatusMessage error={error} />
+      <StatusMessage error={knowledgeError} />
       {!matrix && !error && <Empty icon={<LoaderCircle className="spin" />} title="Cargando matriz" text="Consultando la configuración activa de la API…" />}
       {matrix && (
         <>
@@ -689,6 +721,49 @@ function MatrixView({ matrix, error }: { matrix: RiskMatrixDocument | null; erro
           </div>
         </>
       )}
+      <article className="knowledge-overview work-card">
+        <header>
+          <div className="knowledge-title">
+            <span><BookOpen size={20} /></span>
+            <div><small>Biblioteca documental</small><h2>RAG preventivo</h2></div>
+          </div>
+          <strong>{knowledgeBase ? `${knowledgeBase.document_count} fuentes · v${knowledgeBase.version}` : "Cargando corpus…"}</strong>
+        </header>
+        <div className="rag-flow" aria-label="Flujo de decisión y evidencia">
+          <span>Matriz PRL</span><ArrowRight aria-hidden="true" />
+          <span>RAG documental</span><ArrowRight aria-hidden="true" />
+          <span>Modelo</span><ArrowRight aria-hidden="true" />
+          <span>Revisión humana</span>
+        </div>
+        <p>
+          <strong>La matriz clasifica y propone el departamento.</strong> El RAG no sustituye esas
+          reglas: recupera documentos preventivos relacionados con la categoría ya validada para
+          fundamentar la propuesta.
+        </p>
+        <div className="knowledge-storage">
+          <Braces size={18} />
+          <p><strong>Almacenamiento actual</strong><code>data/knowledge/prevention_docs.v1.json</code></p>
+        </div>
+        <p className="knowledge-ingestion">
+          PDF y DOCX no se leen directamente todavía. Para incorporarlos hay que extraer el texto,
+          dividirlo en fragmentos, añadir metadatos y regenerar el corpus versionado.
+        </p>
+        {knowledgeBase && (
+          <details className="knowledge-sources">
+            <summary>Ver inventario de fuentes</summary>
+            <ul>
+              {knowledgeBase.sources.map((source) => (
+                <li key={source.source_id}>
+                  <strong>{source.title}</strong>
+                  <span>{source.source_id} · {source.section}</span>
+                  <small>{source.categories.map(optionLabel).join(" · ")}</small>
+                </li>
+              ))}
+            </ul>
+            <p>{knowledgeBase.disclaimer}</p>
+          </details>
+        )}
+      </article>
     </section>
   );
 }

@@ -1,5 +1,5 @@
 export type Provider = "local" | "external";
-export type View = "new" | "inbox" | "dashboard" | "matrix" | "compare";
+export type View = "new" | "inbox" | "history" | "dashboard" | "matrix" | "compare";
 export type ReviewDecision = "approved" | "modified" | "rejected";
 export type ProposalStatus = "pending_review" | ReviewDecision;
 export type AuditEventType = "triage_created" | "review_completed";
@@ -100,6 +100,21 @@ export interface KnowledgeEvidence {
   score: number;
 }
 
+export interface KnowledgeSourceSummary {
+  source_id: string;
+  title: string;
+  section: string;
+  categories: Category[];
+}
+
+export interface KnowledgeBaseSummary {
+  version: string;
+  disclaimer: string;
+  source_format: "versioned_json";
+  document_count: number;
+  sources: KnowledgeSourceSummary[];
+}
+
 export interface TriageProposalResponse extends TriageProposal {
   notice_id: string;
   triage_run_id: string;
@@ -150,6 +165,7 @@ export interface NoticeRecord {
 export interface NoticeQuery {
   search?: string;
   status?: ProposalStatus;
+  closed?: boolean;
   urgency?: Urgency;
   provider?: Provider;
   category?: Category;
