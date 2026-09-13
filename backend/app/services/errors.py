@@ -7,3 +7,7 @@ class InvalidProviderOutputError(RuntimeError):
     def __init__(self, attempts: int) -> None:
         super().__init__("La respuesta del proveedor no cumple el contrato de triaje.")
         self.attempts = attempts
+
+
+class InvalidKnowledgeBaseError(RuntimeError):
+    """El corpus RAG no existe, no es JSON válido o incumple su contrato."""

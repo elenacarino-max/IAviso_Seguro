@@ -56,6 +56,7 @@ def create_comparison(
             metrics=metrics_service.build(
                 triage_request,
                 execution.telemetry,
+                evidence=execution.evidence,
             ),
         )
 
@@ -64,10 +65,15 @@ def create_comparison(
         max_workers=len(providers),
         thread_name_prefix="comparison-provider",
     ) as executor:
+        # Enviar ambos trabajos antes de esperar evita que Ollama bloquee el
+        # inicio de Gemini (o al revés) y reduce la latencia total al máximo de
+        # ambos proveedores, en vez de a su suma.
         futures = {
             provider: executor.submit(execute_provider, provider)
             for provider in providers
         }
+        # La lectura respeta el orden público local/external aunque cada futuro
+        # termine en un instante distinto; así la API y la interfaz son estables.
         results = tuple(futures[provider].result() for provider in providers)
     return repository.create_comparison(payload, results)
 

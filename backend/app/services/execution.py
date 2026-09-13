@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from backend.app.providers import ProviderCallMetrics
-from backend.app.schemas import TriageResult
+from backend.app.schemas import KnowledgeEvidence, TriageResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +26,7 @@ class ExecutionTelemetry:
 class TriageExecution:
     result: TriageResult | None
     telemetry: ExecutionTelemetry
+    evidence: tuple[KnowledgeEvidence, ...] = ()
     error: Exception | None = field(default=None, repr=False, compare=False)
 
 
@@ -35,6 +36,7 @@ class ExecutionAccumulator:
         self.started_tick = started_tick
         self.provider_attempts = 0
         self.repair_attempts = 0
+        self.evidence: tuple[KnowledgeEvidence, ...] = ()
         self._input_tokens: list[int | None] = []
         self._output_tokens: list[int | None] = []
         self._total_tokens: list[int | None] = []

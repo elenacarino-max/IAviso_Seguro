@@ -7,6 +7,7 @@ from backend.app.providers import ProviderConnectionError, ProviderRateLimitErro
 from backend.app.schemas import (
     ErrorCode,
     ExecutionMetrics,
+    KnowledgeEvidence,
     PricingReference,
     TriageRequest,
 )
@@ -17,7 +18,7 @@ from backend.app.tools import (
     ToolStepLimitError,
 )
 
-from .errors import InvalidProviderOutputError
+from .errors import InvalidKnowledgeBaseError, InvalidProviderOutputError
 from .execution import ExecutionTelemetry
 
 _MILLION = Decimal(1_000_000)
@@ -33,6 +34,8 @@ class MetricsService:
         self,
         request: TriageRequest,
         telemetry: ExecutionTelemetry,
+        *,
+        evidence: tuple[KnowledgeEvidence, ...] = (),
     ) -> ExecutionMetrics:
         model = self.model_for(request.provider)
         pricing = self._pricing_for(request.provider, model)
@@ -56,6 +59,7 @@ class MetricsService:
             api_cost_currency=(pricing.currency if pricing is not None else None),
             computational_cost=None,
             pricing=pricing,
+            evidence=evidence,
         )
 
     def model_for(self, provider: str) -> str | None:
@@ -125,6 +129,7 @@ def error_code_for(error: Exception | None) -> ErrorCode | None:
 
     mappings: tuple[tuple[type[Exception], ErrorCode], ...] = (
         (InvalidProviderOutputError, "invalid_provider_output"),
+        (InvalidKnowledgeBaseError, "invalid_knowledge_base"),
         (ProviderConnectionError, "provider_unavailable"),
         (ProviderRateLimitError, "provider_rate_limited"),
         (InvalidToolArgumentsError, "invalid_tool_arguments"),

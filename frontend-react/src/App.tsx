@@ -34,6 +34,7 @@ import type {
   Department,
   EvaluationReport,
   HealthResponse,
+  KnowledgeEvidence,
   MetricsSummary,
   NoticeRecord,
   NoticePage,
@@ -74,6 +75,9 @@ const serviceFallbacks = [
   { id: "gemini", label: "Gemini" },
   { id: "sqlite", label: "SQLite" },
 ] as const;
+// Debe reflejar backend.schemas.triage.NoticeText. Una sola constante evita
+// que los formularios de alta y comparación vuelvan a divergir.
+const NOTICE_TEXT_MAX_LENGTH = 4000;
 type CatalogValue = Category | Urgency | Department;
 const optionLabels = {
   riesgo_electrico: "Riesgo eléctrico",
@@ -287,11 +291,11 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
               value={text}
               onChange={(event) => setText(event.target.value)}
               minLength={1}
-              maxLength={4000}
+              maxLength={NOTICE_TEXT_MAX_LENGTH}
               required
               placeholder="Ej.: Cable atravesando una zona de paso junto al almacén. Dos personas han tropezado esta mañana…"
             />
-            <small>{text.length}/4000</small>
+            <small>{text.length}/{NOTICE_TEXT_MAX_LENGTH}</small>
           </label>
 
           <label className="field">
@@ -342,7 +346,7 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
             <p><b>Departamento</b>{optionLabel(result.department)}</p>
             <p><b>Resumen</b>{result.summary}</p>
           </div>
-          <ProposalExplanation proposal={result} riskMatrix={riskMatrix} />
+          <ProposalExplanation proposal={result} riskMatrix={riskMatrix} evidence={result.metrics.evidence ?? []} />
           <button onClick={onCreated}>Abrir bandeja <ArrowRight size={17} /></button>
         </div>
       )}
@@ -482,7 +486,7 @@ function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone 
       <h2>{optionLabel(run.proposal.category)}</h2>
       <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span>{optionLabel(run.proposal.department)}</span></div>
       <blockquote>{run.proposal.summary}</blockquote>
-      <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} />
+      <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} evidence={run.metrics?.evidence ?? []} />
       <div className="original-notice"><span>Observación recibida</span><p>{notice.text}</p></div>
       <AuditTimeline notice={notice} run={run} events={auditEvents} error={auditError} />
 
@@ -598,10 +602,12 @@ const formatNumber = (value: number | null) => value === null ? "—" : value.to
 function ProposalExplanation({
   proposal,
   riskMatrix,
+  evidence = [],
   compact = false,
 }: {
   proposal: TriageProposal;
   riskMatrix: RiskMatrixDocument | null;
+  evidence?: KnowledgeEvidence[];
   compact?: boolean;
 }) {
   const rule = Array.isArray(riskMatrix?.rules)
@@ -620,6 +626,26 @@ function ProposalExplanation({
         <div><span>2</span><p><strong>Regla aplicada</strong> {rule?.rule_id ?? `categoría ${optionLabel(proposal.category)}`}</p></div>
         <div><span>3</span><p><strong>Evidencia</strong> {rule?.evidence ?? "La matriz no estaba disponible para ampliar la evidencia."}</p></div>
       </div>
+      {evidence.length > 0 && (
+        <div className="rag-evidence" aria-label="Evidencia consultada">
+          <div className="rag-evidence-heading">
+            <BookOpen size={16} aria-hidden="true" />
+            <div><strong>Evidencia consultada</strong><small>Fuentes recuperadas por el backend</small></div>
+          </div>
+          <ul>
+            {evidence.map((source) => (
+              <li key={`${source.source_type}:${source.source_id}`}>
+                <span>{source.source_id}</span>
+                <div>
+                  <strong>{source.title}</strong>
+                  <small>{source.section} · versión {source.version}</small>
+                  <p>{source.excerpt}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <details className="json-panel">
         <summary><Braces size={16} /> Ver JSON estructurado</summary>
         <pre>{JSON.stringify(proposal, null, 2)}</pre>
@@ -694,7 +720,7 @@ function Comparison({ riskMatrix, catalogs, catalogsError }: { riskMatrix: RiskM
     <section className="page-content">
       <PageIntro eyebrow="05 · Evaluación" title="Mismo caso. Dos proveedores. Una comparación justa.">Ejecuta el caso sintético con los dos motores y contrasta calidad, latencia, tokens y coste.</PageIntro>
       <form className="compare-form work-card" onSubmit={submit}>
-        <label className="field"><span>Caso sintético</span><textarea aria-label="Caso sintético" value={text} onChange={(e) => setText(e.target.value)} required minLength={1} maxLength={4000} placeholder="Describe un riesgo sin datos personales…" /></label>
+        <label className="field"><span>Caso sintético</span><textarea aria-label="Caso sintético" value={text} onChange={(e) => setText(e.target.value)} required minLength={1} maxLength={NOTICE_TEXT_MAX_LENGTH} placeholder="Describe un riesgo sin datos personales…" /></label>
         <label className="field compact"><span><MapPin size={16} /> Ubicación <em>opcional</em></span><input value={location} onChange={(e) => setLocation(e.target.value)} maxLength={200} placeholder="Zona de prueba" /></label>
         <button className="primary-action" disabled={loading || text.trim().length < 1}>{loading ? <><LoaderCircle className="spin" /> Comparando…</> : <><GitCompareArrows /> Ejecutar ambos motores</>}</button>
       </form>
@@ -722,7 +748,7 @@ function ProviderComparisonCard({ item, riskMatrix }: { item: ComparisonProvider
   const proposal = item.result;
   const metrics = item.metrics;
   const cost = metrics.api_cost === null ? "—" : `${metrics.api_cost}${metrics.api_cost_currency ? ` ${metrics.api_cost_currency}` : ""}`;
-  return <article className="comparison-card"><header><span>{item.provider === "local" ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{providerNames[item.provider]}</h2><em>{metrics.model ?? "Modelo no registrado"}</em></div></header><div className={`urgency ${urgencyTone(proposal.urgency)}`}>{optionLabel(proposal.urgency)}</div><h3>{optionLabel(proposal.category)}</h3><p>{proposal.summary}</p><p className="comparison-department"><strong>Departamento:</strong> {optionLabel(proposal.department)}</p><ProposalExplanation proposal={proposal} riskMatrix={riskMatrix} compact /><dl><div><dt>Latencia</dt><dd>{formatDuration(metrics.latency_ms)}</dd></div><div><dt>Reparaciones</dt><dd>{metrics.repair_attempts}</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{cost}</dd></div></dl></article>;
+  return <article className="comparison-card"><header><span>{item.provider === "local" ? <Activity /> : <Sparkles />}</span><div><small>Proveedor</small><h2>{providerNames[item.provider]}</h2><em>{metrics.model ?? "Modelo no registrado"}</em></div></header><div className={`urgency ${urgencyTone(proposal.urgency)}`}>{optionLabel(proposal.urgency)}</div><h3>{optionLabel(proposal.category)}</h3><p>{proposal.summary}</p><p className="comparison-department"><strong>Departamento:</strong> {optionLabel(proposal.department)}</p><ProposalExplanation proposal={proposal} riskMatrix={riskMatrix} evidence={metrics.evidence ?? []} compact /><dl><div><dt>Latencia</dt><dd>{formatDuration(metrics.latency_ms)}</dd></div><div><dt>Reparaciones</dt><dd>{metrics.repair_attempts}</dd></div><div><dt>Tokens</dt><dd>{metrics.total_tokens ?? "—"}</dd></div><div><dt>Coste</dt><dd>{cost}</dd></div></dl></article>;
 }
 
 function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProviderResult[]; humanReview: ComparisonReviewRecord | null }) {

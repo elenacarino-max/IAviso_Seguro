@@ -23,6 +23,10 @@ class MockTriageProvider:
             )
 
         location = request.location or "ubicación no indicada"
+        source_ids = ", ".join(
+            source.source_id
+            for source in observation.retrieved_evidence
+        )
         return {
             "category": observation.arguments.category,
             "urgency": observation.recommended_urgency,
@@ -31,6 +35,7 @@ class MockTriageProvider:
             "justification": (
                 f"Matriz didáctica {observation.matrix_version}, regla "
                 f"{observation.rule_id}, para {location}: {observation.evidence} "
+                f"Evidencia consultada: {source_ids}. "
                 "La propuesta requiere revisión profesional."
             ),
         }

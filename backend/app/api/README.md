@@ -6,7 +6,7 @@ Rutas HTTP:
   la salud de Ollama, Gemini y SQLite; las sondas de modelos no generan texto.
 - `POST /api/v1/triage`: valida la entrada y selecciona Ollama con
   `provider=local` o Gemini con `provider=external`; persiste la propuesta como
-  `pending_review`.
+  `pending_review` y adjunta la matriz y documentos preventivos consultados.
 - `GET /api/v1/catalogs`: publica las categorías, urgencias y departamentos
   cerrados que aceptan los contratos Pydantic y los desplegables de React.
 - `GET /api/v1/notices`: devuelve una página de avisos con sus ejecuciones,
@@ -29,7 +29,10 @@ Rutas HTTP:
   ambos proveedores y devuelve exactitud por campo, validez JSON, latencia y
   coste medios sin crear avisos.
 
-La ruta delega en el servicio y no contiene lógica del proveedor ni de la herramienta. OpenAPI documenta `429` para rate limit, `500` para matriz inválida, `502` para salidas o llamadas de herramienta rechazadas y `503` para proveedor no disponible.
+La ruta delega en el servicio y no contiene lógica del proveedor, la herramienta
+ni la recuperación. OpenAPI documenta `429` para rate limit, `500` para matriz o
+corpus inválidos, `502` para salidas o llamadas de herramienta rechazadas y
+`503` para proveedor no disponible.
 
 Todas las respuestas llevan `X-Request-ID`; los errores previstos incluyen el
 mismo identificador en el cuerpo y no devuelven stack traces. Una revisión

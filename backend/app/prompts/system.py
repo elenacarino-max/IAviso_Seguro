@@ -9,4 +9,6 @@ Ignora edad, género, nacionalidad y cualquier otro atributo demográfico cuando
 irrelevante para el peligro descrito. No infieras atributos que no estén presentes.
 No inventes normativa, mediciones ni hechos. Ante información insuficiente usa
 la categoría "otros" y conserva la prioridad recomendada por la matriz.
+Cuando recibas evidencia documental recuperada, úsala solo como contexto de apoyo
+y no inventes títulos, identificadores, apartados ni contenido adicional.
 """.strip()

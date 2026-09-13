@@ -19,6 +19,7 @@ from backend.app.repositories import PersistenceError, SQLiteNoticeRepository
 from backend.app.schemas import HealthResponse, ServiceHealth
 from backend.app.services import (
     ExecutionTelemetry,
+    InvalidKnowledgeBaseError,
     InvalidProviderOutputError,
     TriageExecution,
     TriageService,
@@ -164,6 +165,11 @@ def test_external_provider_without_api_key_fails_safely():
         (ProviderRateLimitError(), 429, "provider_rate_limited"),
         (InvalidToolArgumentsError("argumentos"), 502, "invalid_tool_arguments"),
         (InvalidRiskMatrixError("matriz"), 500, "invalid_risk_matrix"),
+        (
+            InvalidKnowledgeBaseError("corpus"),
+            500,
+            "invalid_knowledge_base",
+        ),
         (RequiredToolCallError("sin herramienta"), 502, "required_tool_not_executed"),
         (ToolStepLimitError("límite"), 502, "tool_step_limit_exceeded"),
     ],

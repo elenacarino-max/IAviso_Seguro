@@ -182,6 +182,9 @@ def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider
     assert result["metrics"]["provider"] == provider
     assert result["metrics"]["provider_attempts"] == 2
     assert result["metrics"]["computational_cost"] is None
+    assert result["metrics"]["evidence"][0]["source_type"] == "risk_matrix"
+    assert result["metrics"]["evidence"][0]["source_id"] == "RM-OTRO-001"
+    assert result["metrics"]["evidence"][1]["source_id"] == "GUIA-OBS-01"
     assert result["category"] == "otros"
     assert result["urgency"] == "media"
     assert result["department"] == "prevencion"

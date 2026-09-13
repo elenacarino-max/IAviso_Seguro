@@ -12,7 +12,7 @@ from backend.app.repositories import (
     ReviewConflictError,
 )
 from backend.app.schemas import ErrorDetail, ErrorResponse
-from backend.app.services import InvalidProviderOutputError
+from backend.app.services import InvalidKnowledgeBaseError, InvalidProviderOutputError
 from backend.app.tools import (
     InvalidRiskMatrixError,
     InvalidToolArgumentsError,
@@ -166,6 +166,18 @@ def register_exception_handlers(application: FastAPI) -> None:
             status_code=500,
             code="invalid_risk_matrix",
             message="La matriz de riesgos no está disponible o es inválida.",
+        )
+
+    @application.exception_handler(InvalidKnowledgeBaseError)
+    async def invalid_knowledge_base_handler(
+        request: Request,
+        exc: InvalidKnowledgeBaseError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=500,
+            code="invalid_knowledge_base",
+            message="La base documental preventiva no está disponible o es inválida.",
         )
 
     @application.exception_handler(RequiredToolCallError)

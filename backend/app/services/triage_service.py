@@ -16,7 +16,12 @@ from backend.app.providers import (
     ToolCall,
     TriageProvider,
 )
-from backend.app.schemas import RiskMatrixObservation, TriageRequest, TriageResult
+from backend.app.schemas import (
+    KnowledgeEvidence,
+    RiskMatrixObservation,
+    TriageRequest,
+    TriageResult,
+)
 from backend.app.tools import (
     InvalidToolArgumentsError,
     RequiredToolCallError,
@@ -25,8 +30,9 @@ from backend.app.tools import (
     ToolStepLimitError,
 )
 
-from .errors import InvalidProviderOutputError
+from .errors import InvalidKnowledgeBaseError, InvalidProviderOutputError
 from .execution import ExecutionAccumulator, TriageExecution
+from .retrieval import PreventionKnowledgeRetriever
 
 _MAX_REPAIR_ATTEMPTS = 3
 _MAX_TOOL_STEPS = 1
@@ -42,6 +48,7 @@ class TriageService:
         *,
         max_repair_attempts: int = 1,
         risk_matrix_tool: RiskMatrixTool | None = None,
+        knowledge_retriever: PreventionKnowledgeRetriever | None = None,
         clock: Callable[[], float] = perf_counter,
         utc_clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -54,6 +61,11 @@ class TriageService:
         self._provider = provider
         self._risk_matrix_tool = (
             risk_matrix_tool if risk_matrix_tool is not None else RiskMatrixTool()
+        )
+        self._knowledge_retriever = (
+            knowledge_retriever
+            if knowledge_retriever is not None
+            else PreventionKnowledgeRetriever()
         )
         self._max_repair_attempts = max_repair_attempts
         self._clock = clock
@@ -83,6 +95,7 @@ class TriageService:
             ProviderConnectionError,
             ProviderRateLimitError,
             ToolError,
+            InvalidKnowledgeBaseError,
         ) as exc:
             return TriageExecution(
                 result=None,
@@ -97,6 +110,7 @@ class TriageService:
                         else None
                     ),
                 ),
+                evidence=accumulator.evidence,
                 error=exc,
             )
         return TriageExecution(
@@ -107,6 +121,7 @@ class TriageService:
                 success=True,
                 error_type=None,
             ),
+            evidence=accumulator.evidence,
         )
 
     def _triage(
@@ -205,6 +220,31 @@ class TriageService:
                         },
                     )
                     raise
+
+                # La fuente visible la decide el backend después de validar la
+                # categoría. El modelo no puede inventar ni seleccionar IDs.
+                retrieved = self._knowledge_retriever.retrieve(
+                    " ".join(
+                        value
+                        for value in (request.text, request.location)
+                        if value
+                    ),
+                    category=observation.arguments.category,
+                )
+                matrix_evidence = KnowledgeEvidence(
+                    source_id=observation.rule_id,
+                    title="Matriz de riesgos PRL",
+                    section=f"Regla {observation.rule_id}",
+                    category=observation.arguments.category,
+                    excerpt=observation.evidence,
+                    source_type="risk_matrix",
+                    version=observation.matrix_version,
+                    score=1.0,
+                )
+                accumulator.evidence = (matrix_evidence, *retrieved)
+                observation = observation.model_copy(
+                    update={"retrieved_evidence": accumulator.evidence}
+                )
                 _logger.info(
                     "tool_execution",
                     extra={
@@ -219,6 +259,22 @@ class TriageService:
                             "department": observation.department,
                             "evidence": observation.evidence,
                         },
+                        "outcome": "accepted",
+                    },
+                )
+                _logger.info(
+                    "knowledge_retrieval",
+                    extra={
+                        "request_id": request_id,
+                        "category": observation.arguments.category,
+                        "source_ids": [
+                            source.source_id
+                            for source in accumulator.evidence
+                        ],
+                        "scores": [
+                            source.score
+                            for source in accumulator.evidence
+                        ],
                         "outcome": "accepted",
                     },
                 )

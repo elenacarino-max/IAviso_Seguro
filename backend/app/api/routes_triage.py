@@ -13,7 +13,11 @@ from backend.app.providers import (
 )
 from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import ErrorResponse, TriageProposalResponse, TriageRequest
-from backend.app.services import MetricsService, TriageService
+from backend.app.services import (
+    MetricsService,
+    PreventionKnowledgeRetriever,
+    TriageService,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["triage"])
 
@@ -42,6 +46,10 @@ _triage_service = TriageService(
         }
     ),
     max_repair_attempts=_settings.llm_repair_attempts,
+    knowledge_retriever=PreventionKnowledgeRetriever(
+        _settings.knowledge_base_path,
+        max_sources=_settings.rag_max_sources,
+    ),
 )
 _metrics_service = MetricsService(_settings)
 
@@ -70,7 +78,10 @@ def get_notice_repository() -> SQLiteNoticeRepository:
     response_model=TriageProposalResponse,
     responses={
         429: {"model": ErrorResponse, "description": "Límite temporal del proveedor"},
-        500: {"model": ErrorResponse, "description": "Matriz inválida o no disponible"},
+        500: {
+            "model": ErrorResponse,
+            "description": "Matriz o corpus inválidos o no disponibles",
+        },
         502: {"model": ErrorResponse, "description": "Salida del proveedor inválida"},
         503: {"model": ErrorResponse, "description": "Proveedor no disponible"},
     },
@@ -87,7 +98,11 @@ def create_triage(
 ) -> TriageProposalResponse:
     request_id = request.state.request_id
     execution = service.execute(payload, request_id=request_id)
-    metrics = metrics_service.build(payload, execution.telemetry)
+    metrics = metrics_service.build(
+        payload,
+        execution.telemetry,
+        evidence=execution.evidence,
+    )
     if execution.error is not None:
         raise execution.error
     if execution.result is None:

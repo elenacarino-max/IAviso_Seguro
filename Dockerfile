@@ -18,6 +18,7 @@ RUN python -m pip install --no-cache-dir -r requirements.txt
 COPY backend/ backend/
 COPY config/ config/
 COPY data/evaluation/ data/evaluation/
+COPY data/knowledge/ data/knowledge/
 COPY --from=frontend-builder /frontend/dist/ frontend-react/dist/
 RUN mkdir -p data/local
 

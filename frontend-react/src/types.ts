@@ -28,6 +28,7 @@ export type ErrorCode =
   | "provider_rate_limited"
   | "invalid_tool_arguments"
   | "invalid_risk_matrix"
+  | "invalid_knowledge_base"
   | "required_tool_not_executed"
   | "tool_step_limit_exceeded";
 
@@ -85,6 +86,18 @@ export interface ExecutionMetrics {
   api_cost_currency: string | null;
   computational_cost: string | null;
   pricing: PricingReference | null;
+  evidence: KnowledgeEvidence[];
+}
+
+export interface KnowledgeEvidence {
+  source_id: string;
+  title: string;
+  section: string;
+  category: Category;
+  excerpt: string;
+  source_type: "risk_matrix" | "preventive_document";
+  version: string;
+  score: number;
 }
 
 export interface TriageProposalResponse extends TriageProposal {

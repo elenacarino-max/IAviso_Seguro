@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from .catalogs import Category, Department, Urgency
+from .knowledge import KnowledgeEvidence
 
 ShortText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 MatrixVersion = Annotated[
@@ -78,3 +79,4 @@ class RiskMatrixObservation(MatrixContract):
     department: Department
     evidence: ShortText
     disclaimer: ShortText
+    retrieved_evidence: tuple[KnowledgeEvidence, ...] = ()

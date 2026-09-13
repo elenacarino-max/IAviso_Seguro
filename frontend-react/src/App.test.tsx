@@ -85,7 +85,7 @@ describe("IAviso Seguro", () => {
     expect(await screen.findByRole("heading", { name: "Bandeja de decisión técnica" })).toBeInTheDocument();
   });
 
-  it("respeta el contrato de longitud de los avisos", () => {
+  it("respeta 4000 caracteres tanto en alta como en comparación", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify([]), { status: 200 }),
     );
@@ -93,6 +93,8 @@ describe("IAviso Seguro", () => {
     const input = screen.getByRole("textbox", { name: "¿Qué has observado?" });
     expect(input).toHaveAttribute("maxlength", "4000");
     expect(input).toHaveAttribute("minlength", "1");
+    await userEvent.click(screen.getByRole("button", { name: /Comparación/ }));
+    expect(screen.getByRole("textbox", { name: "Caso sintético" })).toHaveAttribute("maxlength", "4000");
   });
 
   it("muestra propuestas, costes y fallos de una comparación", async () => {
@@ -126,6 +128,28 @@ describe("IAviso Seguro", () => {
                 total_tokens: 42,
                 api_cost: "0",
                 api_cost_currency: "USD",
+                evidence: [
+                  {
+                    source_id: "RM-ELEC-001",
+                    title: "Matriz de riesgos PRL",
+                    section: "Regla RM-ELEC-001",
+                    category: "riesgo_electrico",
+                    excerpt: "Regla de matriz sintética.",
+                    source_type: "risk_matrix",
+                    version: "1.0.0",
+                    score: 1,
+                  },
+                  {
+                    source_id: "PRL-EL-04",
+                    title: "Procedimiento interno de riesgo eléctrico",
+                    section: "Apartado 3.2 · Aislamiento de la zona",
+                    category: "riesgo_electrico",
+                    excerpt: "Fragmento preventivo sintético.",
+                    source_type: "preventive_document",
+                    version: "1.0.0",
+                    score: 9,
+                  },
+                ],
               },
             },
             {
@@ -159,8 +183,10 @@ describe("IAviso Seguro", () => {
     expect(screen.getByText("0 USD")).toBeInTheDocument();
     expect(screen.getByText("Código: provider_unavailable")).toBeInTheDocument();
     expect(screen.getByText("Explicación del modelo")).toBeInTheDocument();
-    expect(screen.getByText(/RM-ELEC-001/)).toBeInTheDocument();
+    expect(screen.getAllByText(/RM-ELEC-001/).length).toBeGreaterThan(0);
     expect(screen.getByText("Ver JSON estructurado")).toBeInTheDocument();
+    expect(screen.getByText("Procedimiento interno de riesgo eléctrico")).toBeInTheDocument();
+    expect(screen.getByText(/Apartado 3.2/)).toBeInTheDocument();
   });
 
   it("muestra calidad, latencia y coste medios del benchmark", async () => {

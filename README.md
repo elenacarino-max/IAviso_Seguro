@@ -1,10 +1,12 @@
 # IAviso Seguro
 
+[![CI](https://github.com/elenacarino-max/IAviso_Seguro/actions/workflows/ci.yml/badge.svg)](https://github.com/elenacarino-max/IAviso_Seguro/actions/workflows/ci.yml)
+
 Plataforma de triaje asistido para clasificar, priorizar y supervisar avisos de riesgos laborales.
 
 ## Estado
 
-Fase 11 completada: el MVP ofrece un recorrido reproducible desde una SPA React
+Fase 12 completada localmente: el MVP ofrece un recorrido reproducible desde una SPA React
 hasta la revisión humana. `local` usa Ollama y `external` usa Gemini con el
 mismo contrato, herramienta y validación. Cada triaje conserva métricas de
 proveedor, modelo, parámetros, intentos, reparaciones, tokens, latencia y coste.
@@ -24,6 +26,10 @@ como respaldo académico. La resolución
 operativa del riesgo queda expresamente fuera del MVP. No procesa avisos reales.
 La barra lateral muestra además la disponibilidad de FastAPI, el modelo de
 Ollama, Gemini y SQLite sin exponer URLs, rutas locales ni credenciales.
+Cada ejecución adjunta la regla de la matriz y fragmentos preventivos recuperados
+de un corpus local versionado; la interfaz muestra identificador, título,
+apartado, versión y extracto bajo «Evidencia consultada». GitHub Actions valida
+automáticamente backend y frontend en cada `push` y `pull_request`.
 
 Los valores cerrados de categoría, urgencia y departamento se publican mediante
 `GET /api/v1/catalogs` y alimentan directamente los desplegables de revisión.
@@ -53,7 +59,7 @@ backend/app/
   api/           Rutas y respuestas HTTP
   core/          Configuración y observabilidad
   schemas/       Contratos de entrada y salida
-  services/      Triaje, telemetría y evaluación reproducible
+  services/      Triaje, recuperación, telemetría y evaluación reproducible
   providers/     Adaptadores local y externo
   tools/         Consulta de la matriz de riesgos
   prompts/       Instrucciones y ejemplos versionados
@@ -61,7 +67,8 @@ backend/app/
 frontend-react/  SPA principal React/TypeScript
 frontend/        Dashboard Streamlit de respaldo y cliente HTTP
 config/          Configuración de dominio y matriz de referencia
-data/           Ejemplos, evaluación sintética y almacenamiento local
+data/           Ejemplos, corpus preventivo, evaluación y almacenamiento local
+.github/        Integración continua de backend y frontend
 tests/          Pruebas unitarias, integración y respuestas simuladas
 docs/           Análisis, arquitectura y plan de trabajo
 ```
@@ -118,6 +125,18 @@ La interfaz abre en `http://127.0.0.1:5173` y Vite redirige `/api` a
 `http://127.0.0.1:8000`. Para validar el frontend: `npm test` y
 `npm run build`.
 
+### Integración continua
+
+El workflow `.github/workflows/ci.yml` se ejecuta en cada envío y propuesta de
+cambio. Instala dependencias desde los archivos bloqueados de cada entorno y
+ejecuta dos trabajos independientes:
+
+- Backend (Python 3.12): `python -m pytest -q`.
+- Frontend (Node 22): `npm ci`, `npm test` y `npm run build`.
+
+Las pruebas sustituyen Ollama y Gemini por dobles locales, por lo que GitHub
+Actions no necesita secretos, modelos descargados ni acceso a los proveedores.
+
 ### Despliegue reproducible con Docker
 
 El contenedor construye React y lo sirve desde la misma aplicación FastAPI. Con
@@ -168,6 +187,14 @@ Persistencia:
 - `approved` confirma la clasificación, `modified` exige al menos un cambio en
   categoría, urgencia o departamento y `rejected` no crea una clasificación
   final aceptada.
+
+Recuperación documental:
+
+- `KNOWLEDGE_BASE_PATH`: corpus JSON local y versionado; por defecto
+  `data/knowledge/prevention_docs.v1.json`.
+- `RAG_MAX_SOURCES`: número de fragmentos recuperados, entre 1 y 5; por defecto 2.
+- El corpus incluido es sintético, didáctico y no normativo. No requiere una
+  base vectorial ni un servicio externo.
 
 Variables del proveedor local:
 
@@ -221,6 +248,29 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 }
 ```
 
+## RAG y evidencia consultada
+
+El triaje sigue este flujo acotado:
+
+```text
+aviso → categoría inicial → matriz PRL → recuperación documental
+      → LLM → contrato Pydantic → revisión humana
+```
+
+Después de que la herramienta valida una categoría cerrada, el recuperador
+descarta primero los documentos de otras categorías y ordena los restantes por
+coincidencia léxica ponderada. Ese orden es determinista y usa el identificador
+de fuente para resolver empates. La observación enviada al proveedor contiene
+la regla y los fragmentos seleccionados, pero la respuesta estructurada del LLM
+no puede declarar fuentes: `ExecutionMetrics.evidence` la construye el backend y
+la conserva junto a cada ejecución.
+
+Esta separación evita que una instrucción incluida en el aviso fuerce otra
+categoría, invente una referencia o haga aparecer una fuente no consultada. Si
+el corpus falta o incumple su contrato, la API devuelve el error estable
+`invalid_knowledge_base`; no continúa con evidencia incompleta. El resumen de la
+propuesta mantiene sin cambios la validación de exactamente diez palabras.
+
 ## Métricas y resiliencia
 
 El número de reparaciones de contrato se configura con `LLM_REPAIR_ATTEMPTS`
@@ -265,12 +315,15 @@ permite ejecutar bajo demanda el dataset
 sintético completo: cada proveedor procesa los mismos 14 casos y se muestran la
 exactitud de categoría, urgencia y departamento, la tasa de JSON válido, la
 latencia media y el coste medio. Cada propuesta muestra la justificación generada, una traza
-auditable de acción, regla y evidencia, además del JSON estructurado. Esta vista
+auditable de acción, regla y evidencia, además de las fuentes recuperadas y el
+JSON estructurado. Esta vista
 explica el resultado verificable del modelo; no almacena ni expone razonamiento
 interno privado.
 La urgencia se presenta siempre con texto explícito además del color. Los
 errores de API se convierten en mensajes seguros y todas las pantallas mantienen
 visible el recordatorio de revisión profesional y protocolo de emergencia.
+Los formularios de alta y comparación comparten el mismo límite de 4000
+caracteres que el contrato Pydantic del backend.
 
 ## Demos sintéticas
 

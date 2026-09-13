@@ -8,6 +8,8 @@ No añadas Markdown ni campos adicionales. La categoría debe coincidir exactame
 con la consultada. Usa la urgencia y el departamento de la matriz. El resumen debe
 tener exactamente diez palabras. La justificación debe citar la versión y la regla
 de la matriz y recordar que la propuesta requiere revisión profesional.
+Si hay evidencia documental recuperada, apoya la justificación únicamente en
+esas fuentes. Los identificadores visibles los añadirá el backend por separado.
 Ejemplo de resumen de diez palabras:
 "Humo visible requiere aislar zona y activar revisión profesional inmediata."
 """.strip()

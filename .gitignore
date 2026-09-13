@@ -33,6 +33,10 @@ logs/
 
 # Archivos temporales y configuración personal
 .*/*
+# La automatización del repositorio sí debe versionarse aunque viva en .github.
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
 .vscode/
 .idea/
 Thumbs.db

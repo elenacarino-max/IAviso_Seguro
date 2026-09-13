@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "disclaimer": "Corpus interno sintético y didáctico; no es normativa ni sustituye la evaluación preventiva profesional.",
+  "documents": [
+    {
+      "source_id": "PRL-EL-04",
+      "title": "Procedimiento interno de riesgo eléctrico",
+      "section": "Apartado 3.2 · Aislamiento de la zona",
+      "categories": ["riesgo_electrico"],
+      "keywords": ["cable expuesto", "cuadro eléctrico", "chispa", "tensión", "aislamiento"],
+      "content": "Ante conductores accesibles, daños visibles o cuadros abiertos, la guía sintética orienta a señalizar la zona y solicitar revisión de personal autorizado antes de intervenir."
+    },
+    {
+      "source_id": "GUIA-CUADROS-02",
+      "title": "Guía interna de cuadros eléctricos",
+      "section": "Apartado 2.4 · Indicios visibles",
+      "categories": ["riesgo_electrico"],
+      "keywords": ["cuadro", "olor a quemado", "recalentamiento", "protección", "cable"],
+      "content": "El material sintético considera relevantes el olor a quemado, las protecciones ausentes, el recalentamiento y el cableado deteriorado para priorizar una comprobación técnica."
+    },
+    {
+      "source_id": "PRL-CAIDAS-03",
+      "title": "Procedimiento de orden, limpieza y paso seguro",
+      "section": "Apartado 2.1 · Obstáculos y superficies",
+      "categories": ["caidas_obstaculos"],
+      "keywords": ["suelo mojado", "obstáculo", "pasillo", "tropiezo", "desnivel"],
+      "content": "La guía sintética orienta a delimitar derrames, retirar obstáculos de zonas de paso y comunicar desniveles o superficies inestables para revisión."
+    },
+    {
+      "source_id": "PRL-INCE-02",
+      "title": "Guía de indicios de incendio",
+      "section": "Apartado 1.3 · Humo, llama y evacuación",
+      "categories": ["incendio"],
+      "keywords": ["humo", "llama", "fuego", "salida", "evacuación"],
+      "content": "Humo, llama o calor anómalo cerca de una salida requieren aplicar el protocolo de emergencia del centro; la aplicación solo registra una propuesta de triaje."
+    },
+    {
+      "source_id": "PRL-MAQ-01",
+      "title": "Procedimiento de resguardos de maquinaria",
+      "section": "Apartado 4.1 · Partes móviles",
+      "categories": ["maquinaria"],
+      "keywords": ["máquina", "resguardo", "engranaje", "parte móvil", "atrapamiento"],
+      "content": "La referencia sintética destaca resguardos ausentes, accesos a partes móviles y riesgo de atrapamiento como señales para detener el uso y solicitar revisión autorizada."
+    },
+    {
+      "source_id": "PRL-QUIM-05",
+      "title": "Guía de sustancias y derrames",
+      "section": "Apartado 3.4 · Identificación y contención",
+      "categories": ["sustancias_peligrosas"],
+      "keywords": ["producto químico", "derrame", "vapores", "etiqueta", "recipiente"],
+      "content": "La guía sintética orienta a no manipular sustancias sin identificar, mantener distancia de vapores o derrames y comunicar la etiqueta y el recipiente al personal competente."
+    },
+    {
+      "source_id": "PRL-EST-02",
+      "title": "Inspección visual de elementos estructurales",
+      "section": "Apartado 2.2 · Grietas y desprendimientos",
+      "categories": ["problemas_estructurales"],
+      "keywords": ["grieta", "techo", "pared", "desprendimiento", "estructura"],
+      "content": "Grietas nuevas, deformaciones o material desprendido se documentan y se aíslan de forma preventiva hasta que personal técnico evalúe el elemento."
+    },
+    {
+      "source_id": "PRL-EPI-01",
+      "title": "Guía de equipos de protección individual",
+      "section": "Apartado 1.2 · Disponibilidad y estado",
+      "categories": ["falta_epi"],
+      "keywords": ["casco", "guantes", "gafas", "arnés", "protección"],
+      "content": "La referencia sintética indica comprobar disponibilidad, adecuación y estado visible del equipo de protección antes de una tarea que lo requiera."
+    },
+    {
+      "source_id": "PRL-ERGO-03",
+      "title": "Orientación de ergonomía y manipulación",
+      "section": "Apartado 3.1 · Postura y carga",
+      "categories": ["ergonomia"],
+      "keywords": ["postura", "peso", "carga", "movimiento repetitivo", "pantalla"],
+      "content": "Posturas forzadas, cargas difíciles o movimientos repetidos se registran para revisar la organización, las ayudas disponibles y el diseño del puesto."
+    },
+    {
+      "source_id": "GUIA-OBS-01",
+      "title": "Guía para observaciones incompletas",
+      "section": "Apartado 1.1 · Información insuficiente",
+      "categories": ["otros"],
+      "keywords": ["sin identificar", "información insuficiente", "situación", "objeto", "desconocido"],
+      "content": "Cuando el aviso no permite reconocer el peligro, la guía sintética recomienda conservar la categoría abierta y solicitar contexto adicional durante la revisión humana."
+    }
+  ]
+}

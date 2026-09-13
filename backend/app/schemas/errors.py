@@ -15,6 +15,7 @@ ErrorCode = Literal[
     "provider_rate_limited",
     "invalid_tool_arguments",
     "invalid_risk_matrix",
+    "invalid_knowledge_base",
     "required_tool_not_executed",
     "tool_step_limit_exceeded",
 ]

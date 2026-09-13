@@ -65,6 +65,7 @@ class EvaluationService:
                         metrics=metrics_service.build(
                             request,
                             execution.telemetry,
+                            evidence=execution.evidence,
                         ),
                     )
                 )

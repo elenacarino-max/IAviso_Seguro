@@ -16,6 +16,7 @@ from pydantic import (
 
 from .catalogs import Category, Department, Provider, Urgency
 from .errors import ErrorCode
+from .knowledge import KnowledgeEvidence
 from .triage import LocationText, NoticeText, TriageResult
 
 
@@ -55,6 +56,7 @@ class ExecutionMetrics(MetricsContract):
     api_cost_currency: str | None = None
     computational_cost: Decimal | None = Field(default=None, ge=0)
     pricing: PricingReference | None = None
+    evidence: tuple[KnowledgeEvidence, ...] = ()
 
 
 class ComparisonRequest(MetricsContract):

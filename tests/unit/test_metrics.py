@@ -77,6 +77,24 @@ def test_local_api_cost_is_zero_but_computational_cost_is_unknown():
     assert metrics.computational_cost is None
 
 
+def test_execution_evidence_is_preserved_in_persistible_metrics():
+    request = TriageRequest(text="Caso sintético", provider="local")
+    execution = TriageService(MockTriageProvider()).execute(
+        request,
+        request_id="metrics-evidence",
+    )
+
+    metrics = MetricsService(Settings(_env_file=None)).build(
+        request,
+        execution.telemetry,
+        evidence=execution.evidence,
+    )
+
+    assert metrics.evidence[0].source_type == "risk_matrix"
+    assert metrics.evidence[0].source_id == "RM-OTRO-001"
+    assert metrics.evidence[1].source_id == "GUIA-OBS-01"
+
+
 def test_dataset_covers_catalog_ambiguity_and_insufficient_information():
     dataset = load_evaluation_dataset("data/evaluation/avisos.v1.json")
 

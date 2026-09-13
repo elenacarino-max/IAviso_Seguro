@@ -83,6 +83,10 @@ def test_service_executes_tool_with_exact_arguments_before_result(triage_request
     assert tool.calls == [{"category": "incendio"}]
     assert provider.observations[0] is None
     assert provider.observations[1].rule_id == "RM-INCE-001"
+    assert [
+        source.source_id
+        for source in provider.observations[1].retrieved_evidence
+    ] == ["RM-INCE-001", "PRL-INCE-02"]
     assert result.category == "incendio"
     assert "RM-INCE-001" in result.justification
 
