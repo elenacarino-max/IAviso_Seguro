@@ -18,8 +18,11 @@ from backend.app.services import (
     MetricsService,
     PreventionKnowledgeRetriever,
     PrivacyService,
+    REVIEW_POLICY_VERSION,
+    ReviewPriorityService,
     SimilarityService,
     TriageService,
+    UncertaintyService,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["triage"])
@@ -67,6 +70,8 @@ _similarity_service = SimilarityService(
     threshold=_settings.embedding_threshold,
     top_k=_settings.embedding_top_k,
 )
+_uncertainty_service = UncertaintyService()
+_review_priority_service = ReviewPriorityService()
 
 
 def get_triage_service() -> TriageService:
@@ -91,6 +96,18 @@ def get_similarity_service() -> SimilarityService:
     """Capacidad complementaria sustituible sin afectar al triaje."""
 
     return _similarity_service
+
+
+def get_uncertainty_service() -> UncertaintyService:
+    """Política técnica pura, sustituible en pruebas de la ruta."""
+
+    return _uncertainty_service
+
+
+def get_review_priority_service() -> ReviewPriorityService:
+    """Política de orden operativo independiente de la urgencia PRL."""
+
+    return _review_priority_service
 
 
 @lru_cache
@@ -121,6 +138,14 @@ def create_triage(
     similarity_service: Annotated[
         SimilarityService,
         Depends(get_similarity_service),
+    ],
+    uncertainty_service: Annotated[
+        UncertaintyService,
+        Depends(get_uncertainty_service),
+    ],
+    review_priority_service: Annotated[
+        ReviewPriorityService,
+        Depends(get_review_priority_service),
     ],
     metrics_service: Annotated[MetricsService, Depends(get_metrics_service)],
     repository: Annotated[
@@ -155,6 +180,12 @@ def create_triage(
         repository,
         request_id=request_id,
     )
+    uncertainty = uncertainty_service.assess(execution.result, metrics)
+    review_priority = review_priority_service.assess(
+        execution.result.urgency,
+        uncertainty,
+        similarity.result,
+    )
     response = repository.create_triage(
         sanitized_payload,
         execution.result,
@@ -163,5 +194,8 @@ def create_triage(
         metrics=metrics,
         similarity=similarity.result,
         embedding=similarity.embedding,
+        uncertainty=uncertainty,
+        review_priority=review_priority,
+        review_policy_version=REVIEW_POLICY_VERSION,
     )
     return response.model_copy(update={"privacy": sanitized_notice.privacy})

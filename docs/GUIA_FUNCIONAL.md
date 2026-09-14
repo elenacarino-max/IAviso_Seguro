@@ -28,11 +28,18 @@ protocolo de emergencias.
         ↓
     Anonimización local
         ↓
-    Matriz PRL + recuperación documental
+    Comprobación de suficiencia
+        ├─ insuficiente → preguntas → ampliar el mismo aviso
+        │                              └→ volver a comprobar
+        └─ suficiente
+              ↓
+    Triaje + matriz PRL + recuperación documental
         ↓
     Propuesta pendiente
         ↓
     Embedding local + avisos históricos
+        ↓
+    Incertidumbre técnica + prioridad de revisión
         ↓
     Bandeja de revisión
         ↓
@@ -44,19 +51,25 @@ protocolo de emergencias.
    local o Gemini externo.
 2. El backend valida la entrada y sustituye PII conocida por marcadores sin
    conservar sus valores.
-3. El backend solicita una propuesta al proveedor elegido usando solo el texto
-   anonimizado.
-4. El modelo debe consultar la matriz de riesgos.
-5. Tras validar la categoría, el backend recupera documentación preventiva
+3. El proveedor elegido comprueba si se describe un peligro concreto. Si falta
+   información, devuelve como máximo tres preguntas y el flujo se detiene sin
+   guardar nada.
+4. La persona amplía el mismo texto y vuelve a comprobarlo; no se crea un chat.
+5. Cuando el aviso es suficiente, el backend solicita una propuesta usando solo
+   los campos anonimizados.
+6. El modelo debe consultar la matriz de riesgos.
+7. Tras validar la categoría, el backend recupera documentación preventiva
    relacionada y conserva las fuentes realmente utilizadas.
-6. Pydantic comprueba el contrato de salida, incluido el resumen de exactamente
+8. Pydantic comprueba el contrato de salida, incluido el resumen de exactamente
    diez palabras.
-7. Si la función está activada, Ollama representa el texto anonimizado como un
+9. Si la función está activada, Ollama representa el texto anonimizado como un
    vector y el backend busca avisos históricos semánticamente próximos.
-8. La propuesta, el aviso anonimizado y, si existe, su embedding se guardan en
-   SQLite con estado pendiente.
-9. Una persona técnica la aprueba, modifica o rechaza.
-10. La decisión queda disponible en el Registro con su auditoría y destino final.
+10. El backend calcula la incertidumbre técnica y la prioridad de revisión con
+   reglas deterministas.
+11. La propuesta, el aviso anonimizado y, si existe, su embedding se guardan en
+   SQLite con la política aplicada.
+12. Una persona técnica la aprueba, modifica o rechaza.
+13. La decisión queda disponible en el Registro con su auditoría y destino final.
 
 ## Pantallas
 
@@ -65,20 +78,33 @@ protocolo de emergencias.
 Captura texto, ubicación opcional y motor. Ollama indica que los datos
 permanecen en local; Gemini informa de que la petición se envía al proveedor.
 El botón principal solo se activa cuando existe texto válido.
+Al pulsarlo, la aplicación ejecuta primero el precheck. Si el texto es claramente
+insuficiente muestra «Necesitamos un poco más de información» y hasta tres
+preguntas. No crea una propuesta todavía: la persona edita el mismo textarea y
+vuelve a intentarlo. Un texto corto pero concreto puede pasar directamente.
+Ante un fallo técnico se muestra un estado diferenciado y una acción explícita
+para continuar sin afirmar que el texto haya sido validado.
 Si el backend anonimiza el texto o la ubicación, la pantalla comunica el número
 y los tipos de datos sustituidos, pero nunca muestra sus valores.
 Cuando existen coincidencias semánticas, aparece un bloque discreto con los
 avisos más próximos, su categoría, urgencia, ubicación, fecha y porcentaje de
 similitud. Si no hay coincidencias o la capacidad no está disponible, no ocupa
 espacio adicional.
+La propuesta muestra por separado la urgencia PRL, la incertidumbre técnica y
+la prioridad recomendada de revisión. La incertidumbre no es una probabilidad ni
+un porcentaje producido por el modelo.
 
 ### Bandeja
 
 Contiene únicamente propuestas pendientes. Permite buscar y filtrar, consultar
 la propuesta original, su justificación, la matriz y la evidencia RAG. La
 tarjeta de revisión conserva también los posibles avisos relacionados detectados
-al crear la propuesta. La
-revisión admite tres decisiones:
+al crear la propuesta. La revisión admite tres decisiones:
+
+Cada tarjeta incorpora un badge de prioridad. El filtro permite seleccionar
+baja, media, alta o crítica, y el orden puede cambiarse entre fecha descendente
+y prioridad descendente con fecha descendente como desempate. La vista inicial
+mantiene el orden histórico por fecha.
 
 - Aprobada: confirma sin cambios categoría, urgencia y departamento.
 - Corregida: exige modificar al menos uno de esos tres campos.
@@ -97,6 +123,11 @@ Resume avisos y ejecuciones persistidas. Distingue propuestas aprobadas sin
 cambios, correcciones y pendientes. Para cada proveedor presenta en el mismo
 orden latencia, salidas reparadas, acuerdo con técnico, JSON válido, tokens y
 coste.
+
+Incluye la distribución de incertidumbre baja, media y alta, las pendientes de
+prioridad alta/crítica y la tasa de corrección humana dentro de cada nivel. Si no
+hay observaciones o revisiones suficientes muestra `N/A`; no infiere conclusiones
+estadísticas.
 
 Acuerdo con técnico significa aprobación sin cambios en un aviso o coincidencia
 completa de categoría, urgencia y departamento en una comparación revisada.
@@ -123,6 +154,18 @@ Ejecuta los mismos catorce casos sintéticos etiquetados en ambos proveedores y
 mide exactitud por campo, validez JSON, latencia y coste. Es una evaluación del
 proyecto, no una afirmación universal sobre qué modelo es mejor. Con Gemini
 configurado puede generar consumo de API.
+
+## Urgencia, incertidumbre y prioridad
+
+- **Urgencia** describe el riesgo preventivo propuesto.
+- **Incertidumbre** resume señales técnicas de la ejecución.
+- **Prioridad de revisión** recomienda el orden de trabajo de la persona técnica.
+
+La política `v1` es determinista, no usa un LLM y conserva reason codes cerrados.
+Una propuesta de incendio puede tener urgencia y prioridad críticas con
+incertidumbre baja si su salida fue estable y estuvo bien fundamentada. Una
+propuesta de urgencia baja puede tener incertidumbre alta, pero sus señales
+técnicas nunca la convierten automáticamente en crítica.
 
 ## Persistencia y trazabilidad
 

@@ -18,6 +18,7 @@ from .catalogs import Category, Department, Provider, Urgency
 from .errors import ErrorCode
 from .knowledge import KnowledgeEvidence
 from .privacy import PrivacyMetadata
+from .review_policy import UncertaintyLevel
 from .triage import LocationText, NoticeText, TriageResult
 
 
@@ -149,6 +150,16 @@ class ProviderMetricsSummary(MetricsContract):
     top_p_values: tuple[float, ...]
 
 
+class UncertaintyLevelSummary(MetricsContract):
+    """Distribución operativa y corrección humana para un nivel técnico."""
+
+    level: UncertaintyLevel
+    runs: int = Field(strict=True, ge=0)
+    rate: float | None = Field(default=None, ge=0, le=1)
+    reviewed_runs: int = Field(strict=True, ge=0)
+    human_correction_rate: float | None = Field(default=None, ge=0, le=1)
+
+
 class MetricsSummary(MetricsContract):
     total_notices: int = Field(strict=True, ge=0)
     total_runs: int = Field(strict=True, ge=0)
@@ -160,6 +171,10 @@ class MetricsSummary(MetricsContract):
     acceptance_rate: float | None = Field(default=None, ge=0, le=1)
     correction_rate: float | None = Field(default=None, ge=0, le=1)
     rejection_rate: float | None = Field(default=None, ge=0, le=1)
+    review_policy_observations: int = Field(strict=True, ge=0)
+    pending_high_priority: int = Field(strict=True, ge=0)
+    pending_critical_priority: int = Field(strict=True, ge=0)
+    uncertainty: tuple[UncertaintyLevelSummary, ...]
     providers: tuple[ProviderMetricsSummary, ...]
 
     @model_validator(mode="after")
@@ -169,6 +184,11 @@ class MetricsSummary(MetricsContract):
             or {item.provider for item in self.providers} != {"local", "external"}
         ):
             raise ValueError("El resumen debe incluir local y external una vez.")
+        if (
+            len(self.uncertainty) != 3
+            or {item.level for item in self.uncertainty} != {"low", "medium", "high"}
+        ):
+            raise ValueError("El resumen debe incluir los tres niveles de incertidumbre.")
         return self
 
 

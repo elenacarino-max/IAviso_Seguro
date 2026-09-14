@@ -22,11 +22,15 @@ from backend.app.schemas import (
     ComparisonResponse,
     ExecutionMetrics,
     NoticePage,
+    NoticeOrder,
     NoticeEmbedding,
     NoticeRecord,
     ProposalStatus,
     Provider,
     ReviewRecord,
+    ReviewPolicyVersion,
+    ReviewPriorityAssessment,
+    ReviewPriorityLevel,
     ReviewRequest,
     ReviewResponse,
     SimilarityResult,
@@ -35,6 +39,7 @@ from backend.app.schemas import (
     TriageRequest,
     TriageResult,
     TriageRunRecord,
+    UncertaintyAssessment,
     Urgency,
 )
 
@@ -67,6 +72,9 @@ CREATE TABLE IF NOT EXISTS triage_runs (
     proposal_json TEXT NOT NULL,
     metrics_json TEXT,
     similarity_json TEXT,
+    uncertainty_json TEXT,
+    review_priority_json TEXT,
+    review_policy_version TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -211,6 +219,18 @@ class SQLiteNoticeRepository:
                     connection.execute(
                         "ALTER TABLE triage_runs ADD COLUMN similarity_json TEXT"
                     )
+                if "uncertainty_json" not in columns:
+                    connection.execute(
+                        "ALTER TABLE triage_runs ADD COLUMN uncertainty_json TEXT"
+                    )
+                if "review_priority_json" not in columns:
+                    connection.execute(
+                        "ALTER TABLE triage_runs ADD COLUMN review_priority_json TEXT"
+                    )
+                if "review_policy_version" not in columns:
+                    connection.execute(
+                        "ALTER TABLE triage_runs ADD COLUMN review_policy_version TEXT"
+                    )
         except sqlite3.Error as exc:
             raise PersistenceError("No se pudo inicializar la base de datos.") from exc
 
@@ -222,6 +242,9 @@ class SQLiteNoticeRepository:
         request_id: str,
         model: str | None,
         metrics: ExecutionMetrics,
+        uncertainty: UncertaintyAssessment,
+        review_priority: ReviewPriorityAssessment,
+        review_policy_version: ReviewPolicyVersion,
         similarity: SimilarityResult = SimilarityResult(),
         embedding: NoticeEmbedding | None = None,
     ) -> TriageProposalResponse:
@@ -248,8 +271,10 @@ class SQLiteNoticeRepository:
                 """
                 INSERT INTO triage_runs (
                     id, notice_id, request_id, provider, model, status,
-                    version, proposal_json, metrics_json, similarity_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?, ?, ?)
+                    version, proposal_json, metrics_json, similarity_json,
+                    uncertainty_json, review_priority_json,
+                    review_policy_version, created_at
+                ) VALUES (?, ?, ?, ?, ?, 'pending_review', 0, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(triage_run_id),
@@ -260,6 +285,9 @@ class SQLiteNoticeRepository:
                     proposal_json,
                     metrics.model_dump_json(),
                     similarity.model_dump_json(),
+                    uncertainty.model_dump_json(),
+                    review_priority.model_dump_json(),
+                    review_policy_version,
                     created_at.isoformat(),
                 ),
             )
@@ -305,6 +333,9 @@ class SQLiteNoticeRepository:
             created_at=created_at,
             metrics=metrics,
             similarity=similarity,
+            uncertainty=uncertainty,
+            review_priority=review_priority,
+            review_policy_version=review_policy_version,
         )
 
     def create_comparison(
@@ -586,6 +617,9 @@ class SQLiteNoticeRepository:
                         tr.proposal_json,
                         tr.metrics_json,
                         tr.similarity_json,
+                        tr.uncertainty_json,
+                        tr.review_priority_json,
+                        tr.review_policy_version,
                         tr.created_at AS run_created_at,
                         r.id AS review_id,
                         r.decision,
@@ -647,6 +681,8 @@ class SQLiteNoticeRepository:
         urgency: Urgency | None = None,
         provider: Provider | None = None,
         category: Category | None = None,
+        review_priority: ReviewPriorityLevel | None = None,
+        order: NoticeOrder = "newest",
         page: int = 1,
         limit: int = 20,
     ) -> NoticePage:
@@ -688,6 +724,14 @@ class SQLiteNoticeRepository:
                     continue
                 if category is not None and effective_category != category:
                     continue
+                if (
+                    review_priority is not None
+                    and (
+                        run.review_priority is None
+                        or run.review_priority.level != review_priority
+                    )
+                ):
+                    continue
                 if needle is not None and needle not in searchable:
                     continue
                 matching_runs.append(run)
@@ -695,6 +739,23 @@ class SQLiteNoticeRepository:
                 filtered.append(
                     notice.model_copy(update={"triage_runs": tuple(matching_runs)})
                 )
+
+        if order == "review_priority":
+            priority_rank = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+            filtered.sort(
+                key=lambda notice: (
+                    max(
+                        (
+                            priority_rank[run.review_priority.level]
+                            if run.review_priority is not None
+                            else -1
+                        )
+                        for run in notice.triage_runs
+                    ),
+                    notice.created_at,
+                ),
+                reverse=True,
+            )
 
         total = len(filtered)
         offset = (page - 1) * limit
@@ -717,7 +778,9 @@ class SQLiteNoticeRepository:
             row = connection.execute(
                 """
                 SELECT id, request_id, provider, model, status, version,
-                       proposal_json, metrics_json, similarity_json, created_at
+                       proposal_json, metrics_json, similarity_json,
+                       uncertainty_json, review_priority_json,
+                       review_policy_version, created_at
                 FROM triage_runs
                 WHERE notice_id = ?
                 ORDER BY created_at DESC, rowid DESC
@@ -835,6 +898,11 @@ class SQLiteNoticeRepository:
                     else None
                 ),
                 similarity=self._similarity_from_value(row["similarity_json"]),
+                uncertainty=self._uncertainty_from_value(row["uncertainty_json"]),
+                review_priority=self._priority_from_value(
+                    row["review_priority_json"]
+                ),
+                review_policy_version=row["review_policy_version"],
                 review=record,
             ),
         )
@@ -925,6 +993,13 @@ class SQLiteNoticeRepository:
             similarity=SQLiteNoticeRepository._similarity_from_value(
                 row["similarity_json"]
             ),
+            uncertainty=SQLiteNoticeRepository._uncertainty_from_value(
+                row["uncertainty_json"]
+            ),
+            review_priority=SQLiteNoticeRepository._priority_from_value(
+                row["review_priority_json"]
+            ),
+            review_policy_version=row["review_policy_version"],
             review=review,
         )
 
@@ -935,6 +1010,14 @@ class SQLiteNoticeRepository:
             if value is not None
             else SimilarityResult()
         )
+
+    @staticmethod
+    def _uncertainty_from_value(value: str | None) -> UncertaintyAssessment | None:
+        return UncertaintyAssessment.model_validate_json(value) if value else None
+
+    @staticmethod
+    def _priority_from_value(value: str | None) -> ReviewPriorityAssessment | None:
+        return ReviewPriorityAssessment.model_validate_json(value) if value else None
 
     def _utc_now(self) -> datetime:
         value = self._clock()

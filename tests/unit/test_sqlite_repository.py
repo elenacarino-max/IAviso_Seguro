@@ -22,9 +22,11 @@ from backend.app.schemas import (
     ExecutionMetrics,
     NoticeEmbedding,
     ReviewRequest,
+    ReviewPriorityAssessment,
     SimilarityResult,
     TriageRequest,
     TriageResult,
+    UncertaintyAssessment,
 )
 
 FIXED_TIME = datetime(2026, 9, 10, 10, 30, tzinfo=UTC)
@@ -58,6 +60,8 @@ METRICS = ExecutionMetrics(
     api_cost=Decimal(0),
     computational_cost=None,
 )
+UNCERTAINTY = UncertaintyAssessment(level="low")
+PRIORITY = ReviewPriorityAssessment(level="high", reasons=("high_urgency",))
 
 
 @pytest.fixture
@@ -75,6 +79,9 @@ def create_proposal(repository):
         request_id=str(uuid4()),
         model="modelo-prueba",
         metrics=METRICS,
+        uncertainty=UNCERTAINTY,
+        review_priority=PRIORITY,
+        review_policy_version="v1",
     )
 
 
@@ -122,6 +129,9 @@ def test_embedding_and_similarity_are_persisted_with_the_created_notice(reposito
         request_id=str(uuid4()),
         model="modelo-prueba",
         metrics=METRICS,
+        uncertainty=UNCERTAINTY,
+        review_priority=PRIORITY,
+        review_policy_version="v1",
         similarity=similarity,
         embedding=embedding,
     )
@@ -133,6 +143,9 @@ def test_embedding_and_similarity_are_persisted_with_the_created_notice(reposito
     assert stored[0].dimensions == 3
     run = repository.list_notices()[0].triage_runs[0]
     assert run.similarity == similarity
+    assert run.uncertainty == UNCERTAINTY
+    assert run.review_priority == PRIORITY
+    assert run.review_policy_version == "v1"
 
 
 def test_modified_review_keeps_original_and_builds_final_classification(repository):
@@ -330,6 +343,9 @@ def test_phase_six_database_gets_additive_metrics_migration(tmp_path):
         }
     assert "metrics_json" in columns
     assert "similarity_json" in columns
+    assert "uncertainty_json" in columns
+    assert "review_priority_json" in columns
+    assert "review_policy_version" in columns
     with sqlite3.connect(database_path) as connection:
         tables = {
             row[0]
@@ -338,3 +354,90 @@ def test_phase_six_database_gets_additive_metrics_migration(tmp_path):
             )
         }
     assert "notice_embeddings" in tables
+
+
+def test_existing_rows_are_not_recalculated_during_policy_migration(tmp_path):
+    database_path = tmp_path / "legacy-policy.db"
+    notice_id = str(uuid4())
+    run_id = str(uuid4())
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE notices (
+                id TEXT PRIMARY KEY, text TEXT NOT NULL,
+                location TEXT, created_at TEXT NOT NULL
+            );
+            CREATE TABLE triage_runs (
+                id TEXT PRIMARY KEY, notice_id TEXT NOT NULL,
+                request_id TEXT NOT NULL UNIQUE, provider TEXT NOT NULL,
+                model TEXT, status TEXT NOT NULL, version INTEGER NOT NULL,
+                proposal_json TEXT NOT NULL, metrics_json TEXT,
+                similarity_json TEXT, created_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO notices VALUES (?, ?, ?, ?)",
+            (notice_id, REQUEST.text, REQUEST.location, FIXED_TIME.isoformat()),
+        )
+        connection.execute(
+            "INSERT INTO triage_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_id,
+                notice_id,
+                str(uuid4()),
+                "local",
+                "modelo-antiguo",
+                "pending_review",
+                0,
+                PROPOSAL.model_dump_json(),
+                METRICS.model_dump_json(),
+                SimilarityResult().model_dump_json(),
+                FIXED_TIME.isoformat(),
+            ),
+        )
+
+    repository = SQLiteNoticeRepository(database_path)
+    run = repository.list_notices()[0].triage_runs[0]
+
+    assert run.uncertainty is None
+    assert run.review_priority is None
+    assert run.review_policy_version is None
+
+
+def test_notices_filter_and_order_by_persisted_review_priority(repository):
+    low_proposal = PROPOSAL.model_copy(update={"urgency": "baja"})
+    low = repository.create_triage(
+        REQUEST.model_copy(update={"text": "Prioridad baja"}),
+        low_proposal,
+        request_id=str(uuid4()),
+        model="modelo-prueba",
+        metrics=METRICS,
+        uncertainty=UNCERTAINTY,
+        review_priority=ReviewPriorityAssessment(
+            level="low", reasons=("low_urgency",)
+        ),
+        review_policy_version="v1",
+    )
+    critical_proposal = PROPOSAL.model_copy(update={"urgency": "critica"})
+    critical = repository.create_triage(
+        REQUEST.model_copy(update={"text": "Prioridad crítica"}),
+        critical_proposal,
+        request_id=str(uuid4()),
+        model="modelo-prueba",
+        metrics=METRICS,
+        uncertainty=UNCERTAINTY,
+        review_priority=ReviewPriorityAssessment(
+            level="critical", reasons=("critical_urgency",)
+        ),
+        review_policy_version="v1",
+    )
+
+    filtered = repository.query_notices(review_priority="low")
+    ordered = repository.query_notices(order="review_priority")
+
+    assert [str(item.id) for item in filtered.items] == [str(low.notice_id)]
+    assert [str(item.id) for item in ordered.items] == [
+        str(critical.notice_id),
+        str(low.notice_id),
+    ]

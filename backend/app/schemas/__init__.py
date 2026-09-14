@@ -3,6 +3,12 @@
 from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
 from .errors import ErrorCode, ErrorDetail, ErrorResponse
 from .health import HealthResponse, ServiceHealth, ServiceId, ServiceStatus
+from .input_assessment import (
+    InputAssessmentDecision,
+    InputAssessmentRequest,
+    InputAssessmentResponse,
+    MissingAspect,
+)
 from .knowledge import (
     KnowledgeBase,
     KnowledgeBaseSummary,
@@ -24,9 +30,20 @@ from .metrics import (
     MetricsSummary,
     PricingReference,
     ProviderMetricsSummary,
+    UncertaintyLevelSummary,
     ProviderEvaluationSummary,
 )
 from .privacy import PrivacyMetadata, PrivacyResult, RedactionType
+from .review_policy import (
+    NoticeOrder,
+    ReviewPolicyVersion,
+    ReviewPriorityAssessment,
+    ReviewPriorityLevel,
+    ReviewPriorityReason,
+    UncertaintyAssessment,
+    UncertaintyLevel,
+    UncertaintyReason,
+)
 from .risk_matrix import (
     RiskMatrixDocument,
     RiskMatrixObservation,
@@ -74,6 +91,9 @@ __all__ = [
     "EvaluationReport",
     "ExecutionMetrics",
     "HealthResponse",
+    "InputAssessmentDecision",
+    "InputAssessmentRequest",
+    "InputAssessmentResponse",
     "KnowledgeBase",
     "KnowledgeBaseSummary",
     "KnowledgeDocument",
@@ -82,7 +102,9 @@ __all__ = [
     "NoticeRecord",
     "NoticeEmbedding",
     "NoticePage",
+    "NoticeOrder",
     "MetricsSummary",
+    "MissingAspect",
     "ProposalStatus",
     "PricingReference",
     "PrivacyMetadata",
@@ -95,6 +117,10 @@ __all__ = [
     "ReviewRequest",
     "ReviewResponse",
     "RedactionType",
+    "ReviewPolicyVersion",
+    "ReviewPriorityAssessment",
+    "ReviewPriorityLevel",
+    "ReviewPriorityReason",
     "RiskMatrixDocument",
     "RiskMatrixObservation",
     "RiskMatrixQuery",
@@ -110,4 +136,8 @@ __all__ = [
     "TriageResult",
     "TriageRunRecord",
     "Urgency",
+    "UncertaintyAssessment",
+    "UncertaintyLevel",
+    "UncertaintyLevelSummary",
+    "UncertaintyReason",
 ]

@@ -32,9 +32,11 @@ import type {
   ComparisonProviderResult,
   ComparisonReviewRecord,
   ComparisonResponse,
+  CreateTriageInput,
   Department,
   EvaluationReport,
   HealthResponse,
+  InputAssessmentResponse,
   KnowledgeBaseSummary,
   KnowledgeEvidence,
   MetricsSummary,
@@ -44,12 +46,18 @@ import type {
   PrivacyMetadata,
   Provider,
   ProposalStatus,
+  ReviewPriorityAssessment,
+  ReviewPriorityLevel,
+  ReviewPriorityReason,
   RiskMatrixDocument,
   SimilarityResult,
   ReviewDecision,
   TriageProposal,
   TriageProposalResponse,
   TriageRunRecord,
+  UncertaintyAssessment,
+  UncertaintyLevel,
+  UncertaintyReason,
   Urgency,
   View,
 } from "./types";
@@ -66,6 +74,7 @@ const NAV: Array<{ id: View; label: string; hint: string; icon: typeof Plus }> =
 const providerNames: Record<Provider, string> = { local: "Ollama · local", external: "Gemini · externo" };
 const providers = ["local", "external"] satisfies readonly Provider[];
 const reviewDecisions = ["approved", "modified", "rejected"] satisfies readonly ReviewDecision[];
+const reviewPriorityLevels = ["critical", "high", "medium", "low"] satisfies readonly ReviewPriorityLevel[];
 const statusLabels: Record<ProposalStatus, string> = {
   pending_review: "Pendiente",
   approved: "Aprobado",
@@ -104,6 +113,31 @@ const optionLabels = {
 } satisfies Record<CatalogValue, string>;
 const optionLabel = (value: CatalogValue) => optionLabels[value];
 
+const policyLevelLabels = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  critical: "Crítica",
+} satisfies Record<ReviewPriorityLevel, string>;
+
+const uncertaintyReasonLabels = {
+  provider_output_repaired: "La salida necesitó una corrección automática.",
+  multiple_repairs: "La salida necesitó varias correcciones automáticas.",
+  generic_category: "La propuesta terminó en la categoría genérica Otros.",
+  incomplete_evidence: "La evidencia preventiva esperada está incompleta.",
+  provider_retry: "El proveedor necesitó un reintento técnico.",
+} satisfies Record<UncertaintyReason, string>;
+
+const priorityReasonLabels = {
+  low_urgency: "El riesgo tiene urgencia baja.",
+  medium_urgency: "El riesgo tiene urgencia media.",
+  high_urgency: "El riesgo tiene urgencia alta.",
+  critical_urgency: "El riesgo tiene urgencia crítica.",
+  high_uncertainty: "La propuesta presenta incertidumbre técnica alta.",
+  recurrent_risk: "Existen avisos semánticamente similares en otras zonas.",
+  recurrent_same_location: "Existen avisos similares en la misma zona.",
+} satisfies Record<ReviewPriorityReason, string>;
+
 const catalogValue = <T extends string>(value: string, catalog: readonly T[]): T => {
   const match = catalog.find((item) => item === value);
   if (match === undefined) throw new Error("El valor seleccionado no pertenece al catálogo activo.");
@@ -112,7 +146,7 @@ const catalogValue = <T extends string>(value: string, catalog: readonly T[]): T
 
 const urgencyTone = (urgency: string) => {
   const value = urgency.toLowerCase();
-  if (value.includes("inmed") || value.includes("alta") || value.includes("crít")) return "danger";
+  if (value.includes("inmed") || value.includes("alta") || value.includes("crit") || value.includes("crít")) return "danger";
   if (value.includes("media") || value.includes("prior")) return "warning";
   return "safe";
 };
@@ -149,12 +183,13 @@ const privacyTypeLabels = {
 function PrivacyNotice({ privacy }: { privacy: PrivacyMetadata | undefined }) {
   if (!privacy?.redacted) return null;
   const noun = privacy.redaction_count === 1 ? "dato personal" : "datos personales";
+  const verb = privacy.redaction_count === 1 ? "Se anonimizó" : "Se anonimizaron";
   const detectedTypes = privacy.redaction_types.map((type) => privacyTypeLabels[type]).join(" · ");
   return (
     <div className="privacy-notice" role="status">
       <ShieldCheck size={17} aria-hidden="true" />
       <span>
-        <strong>Se anonimizaron {privacy.redaction_count} {noun} antes de analizar el aviso.</strong>
+        <strong>{verb} {privacy.redaction_count} {noun} antes de analizar el aviso.</strong>
         {detectedTypes && <small>{detectedTypes}</small>}
       </span>
     </div>
@@ -193,6 +228,79 @@ function SimilarityNotice({ similarity }: { similarity: SimilarityResult | undef
         ))}
       </ul>
       <footer>La similitud semántica es una señal orientativa: no confirma que sea el mismo incidente.</footer>
+    </section>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: ReviewPriorityAssessment | null | undefined }) {
+  if (!priority) return null;
+  return <span className={`priority-badge priority-${priority.level}`}>{policyLevelLabels[priority.level]}</span>;
+}
+
+function ReviewPolicySummary({
+  uncertainty,
+  priority,
+  version,
+}: {
+  uncertainty: UncertaintyAssessment | null | undefined;
+  priority: ReviewPriorityAssessment | null | undefined;
+  version: string | null | undefined;
+}) {
+  if (!uncertainty || !priority) return null;
+  return (
+    <section className="review-policy-summary" aria-label="Prioridad e incertidumbre técnica">
+      <article>
+        <span>Prioridad de revisión</span>
+        <PriorityBadge priority={priority} />
+        <ul>{priority.reasons.slice(0, 3).map((reason) => <li key={reason}>{priorityReasonLabels[reason]}</li>)}</ul>
+      </article>
+      <article title="La incertidumbre se calcula con señales técnicas del sistema; no es una probabilidad generada por la IA.">
+        <span>Incertidumbre técnica</span>
+        <strong className={`uncertainty-level uncertainty-${uncertainty.level}`}>{policyLevelLabels[uncertainty.level]}</strong>
+        {uncertainty.reasons.length > 0
+          ? <ul>{uncertainty.reasons.slice(0, 3).map((reason) => <li key={reason}>{uncertaintyReasonLabels[reason]}</li>)}</ul>
+          : <p>La ejecución no presenta señales técnicas de incertidumbre.</p>}
+      </article>
+      <footer>Política {version ?? "no disponible"} · No es confianza del modelo ni sustituye la revisión humana.</footer>
+    </section>
+  );
+}
+
+function InputAssessmentNotice({
+  assessment,
+  loading,
+  onContinue,
+}: {
+  assessment: InputAssessmentResponse | null;
+  loading: boolean;
+  onContinue: () => void;
+}) {
+  if (!assessment || (assessment.available && assessment.sufficient)) return null;
+  if (!assessment.available) {
+    return (
+      <section className="precheck-notice unavailable" aria-label="Precheck no disponible">
+        <AlertTriangle size={18} aria-hidden="true" />
+        <div>
+          <strong>No se pudo completar la comprobación previa</strong>
+          <p>No se ha afirmado que el aviso sea suficiente. Puedes reintentarlo o continuar con el flujo habitual.</p>
+          <PrivacyNotice privacy={assessment.privacy} />
+          <button type="button" className="secondary-action" disabled={loading} onClick={onContinue}>
+            Continuar sin comprobación
+          </button>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="precheck-notice" aria-label="Información insuficiente">
+      <ClipboardCheck size={18} aria-hidden="true" />
+      <div>
+        <strong>Necesitamos un poco más de información</strong>
+        <p>Antes de analizar este aviso, concreta:</p>
+        <ul>{assessment.questions.slice(0, 3).map((question) => <li key={question}>{question}</li>)}</ul>
+        <small>Amplía la descripción en el mismo campo y vuelve a generar la propuesta.</small>
+        <PrivacyNotice privacy={assessment.privacy} />
+      </div>
     </section>
   );
 }
@@ -326,21 +434,52 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
   const [provider, setProvider] = useState<Provider>("local");
-  const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<"precheck" | "triage" | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<TriageProposalResponse | null>(null);
+  const [assessment, setAssessment] = useState<InputAssessmentResponse | null>(null);
+
+  const input = (): CreateTriageInput => ({
+    text: text.trim(),
+    provider,
+    location: location.trim() || null,
+  });
+
+  const createProposal = async (payload: CreateTriageInput) => {
+    setLoadingStage("triage");
+    setResult(await api.createTriage(payload));
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoading(true);
+    setLoadingStage("precheck");
     setError(null);
     setResult(null);
+    setAssessment(null);
     try {
-      setResult(await api.createTriage({ text: text.trim(), provider, location: location.trim() || null }));
+      const payload = input();
+      const nextAssessment = await api.precheckTriage(payload);
+      setAssessment(nextAssessment);
+      if (nextAssessment.available && nextAssessment.sufficient) {
+        await createProposal(payload);
+      }
     } catch (caught) {
       setError(caught);
     } finally {
-      setLoading(false);
+      setLoadingStage(null);
+    }
+  };
+
+  const continueWithoutPrecheck = async () => {
+    setError(null);
+    setResult(null);
+    setAssessment(null);
+    try {
+      await createProposal(input());
+    } catch (caught) {
+      setError(caught);
+    } finally {
+      setLoadingStage(null);
     }
   };
 
@@ -388,9 +527,18 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
             ))}
           </fieldset>
 
+          <InputAssessmentNotice
+            assessment={assessment}
+            loading={loadingStage !== null}
+            onContinue={() => { void continueWithoutPrecheck(); }}
+          />
           <StatusMessage error={error} />
-          <button className="primary-action" disabled={loading || text.trim().length < 1}>
-            {loading ? <><LoaderCircle className="spin" /> Analizando aviso…</> : <>Generar propuesta <ArrowRight /></>}
+          <button className="primary-action" disabled={loadingStage !== null || text.trim().length < 1}>
+            {loadingStage === "precheck"
+              ? <><LoaderCircle className="spin" /> Comprobando información…</>
+              : loadingStage === "triage"
+                ? <><LoaderCircle className="spin" /> Analizando aviso…</>
+                : <>Generar propuesta <ArrowRight /></>}
           </button>
         </form>
 
@@ -403,8 +551,9 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
           <h2>Una señal entra. Una persona decide.</h2>
           <ol>
             <li><span>1</span><p><strong>Describe</strong> el peligro observado.</p></li>
-            <li><span>2</span><p><strong>La IA consulta</strong> la matriz de riesgo.</p></li>
-            <li><span>3</span><p><strong>Un técnico revisa</strong> antes de aceptar.</p></li>
+            <li><span>2</span><p><strong>Comprueba</strong> que existe información suficiente.</p></li>
+            <li><span>3</span><p><strong>La IA consulta</strong> la matriz de riesgo.</p></li>
+            <li><span>4</span><p><strong>Un técnico revisa</strong> antes de aceptar.</p></li>
           </ol>
           <div className="emergency-note"><AlertTriangle /><p><strong>¿Existe peligro inmediato?</strong> Sigue el protocolo de emergencias. Esta aplicación no lo sustituye.</p></div>
         </aside>
@@ -416,6 +565,11 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
           <div className={`urgency ${urgencyTone(result.urgency)}`}>{optionLabel(result.urgency)}</div>
           <PrivacyNotice privacy={result.privacy} />
           <SimilarityNotice similarity={result.similarity} />
+          <ReviewPolicySummary
+            uncertainty={result.uncertainty}
+            priority={result.review_priority}
+            version={result.review_policy_version}
+          />
           <div className="result-fields">
             <p><b>Categoría</b>{optionLabel(result.category)}</p>
             <p><b>Departamento</b>{optionLabel(result.department)}</p>
@@ -495,6 +649,8 @@ function InboxView({ mode, riskMatrix, catalogs, catalogsError, onPendingChange 
           <label>Urgencia<select value={query.urgency ?? ""} onChange={(event) => updateQuery({ urgency: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.urgencies) : undefined })}><option value="">Todas</option>{catalogs?.urgencies.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
           <label>Categoría<select value={query.category ?? ""} onChange={(event) => updateQuery({ category: event.target.value && catalogs ? catalogValue(event.target.value, catalogs.categories) : undefined })}><option value="">Todas</option>{catalogs?.categories.map((value) => <option key={value} value={value}>{optionLabel(value)}</option>)}</select></label>
           <label>Motor<select value={query.provider ?? ""} onChange={(event) => updateQuery({ provider: event.target.value ? catalogValue(event.target.value, providers) : undefined })}><option value="">Todos</option>{providers.map((value) => <option key={value} value={value}>{providerNames[value]}</option>)}</select></label>
+          <label>Prioridad<select value={query.review_priority ?? ""} onChange={(event) => updateQuery({ review_priority: event.target.value ? catalogValue(event.target.value, reviewPriorityLevels) : undefined })}><option value="">Todas</option>{reviewPriorityLevels.map((value) => <option key={value} value={value}>{policyLevelLabels[value]}</option>)}</select></label>
+          <label>Orden<select value={query.order ?? "newest"} onChange={(event) => updateQuery({ order: catalogValue(event.target.value, ["newest", "review_priority"] as const) })}><option value="newest">Más recientes</option><option value="review_priority">Prioridad de revisión</option></select></label>
           <button className="filter-reset" type="button" onClick={resetFilters}>Restablecer</button>
         </div>
       </div>
@@ -509,7 +665,7 @@ function InboxView({ mode, riskMatrix, catalogs, catalogsError, onPendingChange 
             const urgency = final?.urgency ?? run.proposal.urgency;
             const destination = final?.department ?? run.proposal.department;
             return <button key={run.id} className={`queue-item ${selected?.run.id === run.id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
-              <div className="queue-top"><span className={`urgency ${urgencyTone(urgency)}`}>{optionLabel(urgency)}</span><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
+              <div className="queue-top"><div className="queue-signals"><span className={`urgency ${urgencyTone(urgency)}`}>{optionLabel(urgency)}</span><PriorityBadge priority={run.review_priority} /></div><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
               <strong>{optionLabel(category)}</strong>
               <p>{notice.text}</p>
               <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span><UserRoundCheck size={14} /> {run.status === "rejected" ? "Destino propuesto" : isHistory ? "Derivado a" : "Destino"}: {optionLabel(destination)}</span><span>{providerNames[run.provider]}</span></footer>
@@ -568,6 +724,7 @@ function ReviewPanel({ notice, run, riskMatrix, catalogs, catalogsError, onDone 
       <div className="review-heading"><span>Propuesta original</span><small>v{run.version} · {run.provider}</small></div>
       <h2>{optionLabel(run.proposal.category)}</h2>
       <div className="review-meta"><span className={`urgency ${urgencyTone(run.proposal.urgency)}`}>{optionLabel(run.proposal.urgency)}</span><span className="routing-destination"><UserRoundCheck size={14} /> Destino propuesto: {optionLabel(run.proposal.department)}</span></div>
+      <ReviewPolicySummary uncertainty={run.uncertainty} priority={run.review_priority} version={run.review_policy_version} />
       <blockquote>{run.proposal.summary}</blockquote>
       <SimilarityNotice similarity={run.similarity} />
       <ProposalExplanation proposal={run.proposal} riskMatrix={riskMatrix} evidence={run.metrics?.evidence ?? []} />
@@ -618,6 +775,7 @@ function AuditTimeline({ notice, run, events, error }: { notice: NoticeRecord; r
     <ol>
       <li><time>{formatDate(notice.created_at)}</time><div><strong>Aviso recibido</strong><p>{notice.location || "Sin ubicación registrada"}</p></div></li>
       <li><time>{formatDate(run.created_at)}</time><div><strong>{providerNames[run.provider]} propone</strong><p>{optionLabel(run.proposal.category)} · {optionLabel(run.proposal.urgency)} · {optionLabel(run.proposal.department)}</p></div></li>
+      {run.review_priority && run.uncertainty && <li><time>{formatDate(run.created_at)}</time><div><strong>Política {run.review_policy_version ?? "no disponible"}</strong><p>Prioridad {policyLevelLabels[run.review_priority.level]} · Incertidumbre {policyLevelLabels[run.uncertainty.level]}</p></div></li>}
       {reviewEvent && <li><time>{formatDate(reviewEvent.created_at)}</time><div><strong>Revisado por {reviewEvent.actor || "persona técnica"}</strong><p>{reviewEvent.previous_status ? `${statusLabels[reviewEvent.previous_status]} → ` : ""}{statusLabels[reviewEvent.new_status]}</p></div></li>}
       {changes.length > 0 && <li className="audit-change"><time>{formatDate(run.review?.created_at)}</time><div><strong>Clasificación corregida</strong>{changes.map((change) => <p key={change}>{change}</p>)}</div></li>}
     </ol>
@@ -639,7 +797,7 @@ function Dashboard() {
     ["Avisos procesados", summary.total_notices, Activity, "Entradas persistidas"],
     ["Aprobadas sin cambios", formatRate(summary.acceptance_rate), ShieldCheck, `${summary.approved} propuestas confirmadas`],
     ["Corregidas por técnico", formatRate(summary.correction_rate), ClipboardCheck, `${summary.modified} correcciones humanas`],
-    ["Pendientes", summary.pending_review, Clock3, `${summary.reviewed} ya revisados`],
+    ["Pendientes", summary.pending_review, Clock3, `${summary.pending_critical_priority ?? 0} críticas · ${summary.pending_high_priority ?? 0} altas`],
   ] as const : [];
 
   return (
@@ -668,6 +826,25 @@ function Dashboard() {
               </article>;
             })}
           </div>
+          <section className="policy-dashboard work-card" aria-label="Indicadores de incertidumbre">
+            <header>
+              <div><span>Supervisión humana</span><h2>Incertidumbre técnica y corrección</h2></div>
+              <strong>{summary.review_policy_observations ?? 0}<small>propuestas con política versionada</small></strong>
+            </header>
+            {summary.review_policy_observations > 0 ? (
+              <div className="uncertainty-dashboard-grid">
+                {summary.uncertainty.map((item) => (
+                  <article key={item.level}>
+                    <span>Incertidumbre {policyLevelLabels[item.level]}</span>
+                    <strong>{formatRate(item.rate)}</strong>
+                    <small>{item.runs} propuestas</small>
+                    <p>Corrección humana <b>{formatRate(item.human_correction_rate)}</b></p>
+                    <small>{item.reviewed_runs} revisadas</small>
+                  </article>
+                ))}
+              </div>
+            ) : <p className="policy-dashboard-empty">N/A · Aún no hay propuestas guardadas con una política de revisión versionada.</p>}
+          </section>
           <p className="dashboard-definition"><ShieldCheck /> “Acuerdo con técnico” exige una aprobación sin cambios o coincidencia en categoría, urgencia y departamento dentro de una comparación revisada. “Aprobadas sin cambios” no incluye propuestas corregidas. Las ejecuciones incluyen avisos y comparaciones; los indicadores superiores corresponden solo al flujo de avisos.</p>
         </>
       )}

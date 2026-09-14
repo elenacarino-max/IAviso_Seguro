@@ -11,10 +11,12 @@ from backend.app.schemas import (
     Category,
     ErrorResponse,
     NoticePage,
+    NoticeOrder,
     ProposalStatus,
     Provider,
     ReviewRequest,
     ReviewResponse,
+    ReviewPriorityLevel,
     Urgency,
 )
 
@@ -43,6 +45,8 @@ def list_notices(
     urgency: Urgency | None = None,
     provider: Provider | None = None,
     category: Category | None = None,
+    review_priority: ReviewPriorityLevel | None = None,
+    order: NoticeOrder = "newest",
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> NoticePage:
@@ -53,6 +57,8 @@ def list_notices(
         urgency=urgency,
         provider=provider,
         category=category,
+        review_priority=review_priority,
+        order=order,
         page=page,
         limit=limit,
     )

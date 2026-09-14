@@ -8,6 +8,7 @@ import type {
   ErrorCode,
   EvaluationReport,
   HealthResponse,
+  InputAssessmentResponse,
   KnowledgeBaseSummary,
   MetricsSummary,
   AuditEventRecord,
@@ -107,6 +108,13 @@ export const api = {
     return request<CatalogsResponse>("/api/v1/catalogs");
   },
 
+  async precheckTriage(input: CreateTriageInput): Promise<InputAssessmentResponse> {
+    return request<InputAssessmentResponse>("/api/v1/triage/precheck", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
   async createTriage(input: CreateTriageInput): Promise<TriageProposalResponse> {
     return request<TriageProposalResponse>("/api/v1/triage", {
       method: "POST",
@@ -122,6 +130,8 @@ export const api = {
     if (query.urgency) params.set("urgency", query.urgency);
     if (query.provider) params.set("provider", query.provider);
     if (query.category) params.set("category", query.category);
+    if (query.review_priority) params.set("review_priority", query.review_priority);
+    if (query.order) params.set("order", query.order);
     if (query.page !== undefined) params.set("page", String(query.page));
     if (query.limit !== undefined) params.set("limit", String(query.limit));
     const suffix = params.size ? `?${params.toString()}` : "";

@@ -20,6 +20,10 @@ reparaciones y costes con referencia tarifaria. `EvaluationService` calcula
 acierto por campo, JSON válido, latencia y coste medio; la corrección humana usa
 exclusivamente observaciones revisadas.
 
+`UncertaintyService` y `ReviewPriorityService` aplican la política determinista
+`v1` después de similitud y antes de persistencia. No usan prompts ni modelos y
+devuelven exclusivamente niveles y reason codes cerrados.
+
 Tras un triaje válido, la API delega la creación de la propuesta y las
 transiciones humanas al repositorio transaccional. La propuesta original nunca
 se reemplaza por la clasificación revisada.

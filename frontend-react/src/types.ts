@@ -16,6 +16,23 @@ export type Category =
   | "ergonomia"
   | "otros";
 export type Urgency = "baja" | "media" | "alta" | "critica";
+export type UncertaintyLevel = "low" | "medium" | "high";
+export type ReviewPriorityLevel = UncertaintyLevel | "critical";
+export type NoticeOrder = "newest" | "review_priority";
+export type UncertaintyReason =
+  | "provider_output_repaired"
+  | "multiple_repairs"
+  | "generic_category"
+  | "incomplete_evidence"
+  | "provider_retry";
+export type ReviewPriorityReason =
+  | "low_urgency"
+  | "medium_urgency"
+  | "high_urgency"
+  | "critical_urgency"
+  | "high_uncertainty"
+  | "recurrent_risk"
+  | "recurrent_same_location";
 export type Department = "prevencion" | "mantenimiento" | "seguridad" | "limpieza";
 export type ErrorCode =
   | "comparison_not_found"
@@ -123,6 +140,16 @@ export interface PrivacyMetadata {
   redaction_types: RedactionType[];
 }
 
+export type MissingAspect = "hazard" | "exposure" | "immediacy" | "context";
+
+export interface InputAssessmentResponse {
+  available: boolean;
+  sufficient: boolean | null;
+  questions: string[];
+  missing_aspects: MissingAspect[];
+  privacy: PrivacyMetadata;
+}
+
 export interface SimilarityMatch {
   notice_id: string;
   score: number;
@@ -140,6 +167,16 @@ export interface SimilarityResult {
   matches: SimilarityMatch[];
 }
 
+export interface UncertaintyAssessment {
+  level: UncertaintyLevel;
+  reasons: UncertaintyReason[];
+}
+
+export interface ReviewPriorityAssessment {
+  level: ReviewPriorityLevel;
+  reasons: ReviewPriorityReason[];
+}
+
 export interface TriageProposalResponse extends TriageProposal {
   notice_id: string;
   triage_run_id: string;
@@ -151,6 +188,9 @@ export interface TriageProposalResponse extends TriageProposal {
   metrics: ExecutionMetrics;
   privacy: PrivacyMetadata;
   similarity: SimilarityResult;
+  uncertainty: UncertaintyAssessment;
+  review_priority: ReviewPriorityAssessment;
+  review_policy_version: string;
 }
 
 export interface ClassificationDecision {
@@ -179,6 +219,9 @@ export interface TriageRunRecord {
   created_at: string;
   metrics: ExecutionMetrics | null;
   similarity: SimilarityResult;
+  uncertainty: UncertaintyAssessment | null;
+  review_priority: ReviewPriorityAssessment | null;
+  review_policy_version: string | null;
   review: ReviewRecord | null;
 }
 
@@ -197,6 +240,8 @@ export interface NoticeQuery {
   urgency?: Urgency;
   provider?: Provider;
   category?: Category;
+  review_priority?: ReviewPriorityLevel;
+  order?: NoticeOrder;
   page?: number;
   limit?: number;
 }
@@ -303,7 +348,19 @@ export interface MetricsSummary {
   acceptance_rate: number | null;
   correction_rate: number | null;
   rejection_rate: number | null;
+  review_policy_observations: number;
+  pending_high_priority: number;
+  pending_critical_priority: number;
+  uncertainty: UncertaintyLevelSummary[];
   providers: ProviderMetricsSummary[];
+}
+
+export interface UncertaintyLevelSummary {
+  level: UncertaintyLevel;
+  runs: number;
+  rate: number | null;
+  reviewed_runs: number;
+  human_correction_rate: number | null;
 }
 
 export interface ProviderEvaluationSummary {

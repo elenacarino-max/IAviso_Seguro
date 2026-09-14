@@ -22,6 +22,10 @@ técnica conserva siempre la decisión final.
 - Anonimizar PII conocida antes de consultar modelos o guardar el aviso.
 - Detectar posibles riesgos recurrentes mediante embeddings locales de avisos
   ya anonimizados.
+- Pedir hasta tres aclaraciones cuando el peligro descrito sea claramente
+  insuficiente, antes de crear ningún aviso.
+- Calcular una incertidumbre técnica y una prioridad de revisión deterministas,
+  versionadas y separadas de la urgencia preventiva.
 
 Las propuestas, revisiones, evidencias y métricas se conservan en SQLite.
 GitHub Actions ejecuta las pruebas de backend y frontend y compila la SPA en
@@ -194,6 +198,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/catalogs
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/risk-matrix
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/knowledge-base
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/metrics/summary
+$precheck = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage/precheck -ContentType 'application/json' -Body '{"text":"Hay humo en un cuadro eléctrico.","provider":"local"}'
 $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/notices?status=pending_review&urgency=alta&provider=local&page=1&limit=20'
 Invoke-RestMethod "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/audit-events"
@@ -267,6 +272,42 @@ la disponibilidad básica de la API en un error HTTP.
 
 ## Prompts, herramienta y seguridad
 
+### Comprobación previa de suficiencia
+
+La SPA llama primero a `POST /api/v1/triage/precheck`. Este endpoint valora
+únicamente si el texto identifica un peligro observable suficiente para generar
+una propuesta revisable. Usa el mismo proveedor elegido por el usuario, pero un
+contrato y prompt independientes: no clasifica, no asigna urgencia o departamento
+y no consulta matriz, RAG ni embeddings.
+
+`PrivacyService` se ejecuta antes del precheck. El proveedor recibe solo el texto
+anonimizado y el endpoint no persiste el aviso, la respuesta del proveedor ni
+ninguna ejecución. Si falta información devuelve entre una y tres preguntas
+breves; el usuario amplía el mismo textarea y vuelve a comprobarlo. Es una
+validación puntual, no un chatbot ni una conversación.
+
+```json
+{
+  "available": true,
+  "sufficient": false,
+  "questions": ["¿Qué peligro concreto has observado?"],
+  "missing_aspects": ["hazard"],
+  "privacy": {
+    "redacted": false,
+    "redaction_count": 0,
+    "redaction_types": []
+  }
+}
+```
+
+Un texto corto no se rechaza por longitud: «Fuego en el cuadro eléctrico» puede
+ser suficiente. No se exige ubicación ni información personal. Las instrucciones
+ignoran atributos demográficos y el contrato rechaza preguntas que soliciten
+datos sensibles. Si el proveedor falla o devuelve JSON inválido, la respuesta
+marca `available=false` y `sufficient=null`; la interfaz lo comunica y permite
+que la persona decida continuar con el triaje existente. Nunca se presenta el
+fallo como una validación satisfactoria.
+
 Antes de que `POST /api/v1/triage` o `POST /api/v1/comparisons` invoquen el
 servicio de triaje, un filtro local y determinista anonimiza el texto del aviso
 y la ubicación libre opcional. El MVP cubre correos electrónicos, teléfonos
@@ -326,6 +367,55 @@ Esta funcionalidad **no es RAG**. Usa embeddings para encontrar reincidencias
 en avisos históricos; el RAG descrito a continuación recupera documentación
 preventiva para fundamentar una propuesta.
 
+## Incertidumbre y prioridad de revisión
+
+El backend aplica la política determinista `v1` después de obtener una propuesta
+válida, su evidencia y la similitud histórica. Son tres conceptos distintos:
+
+- **Urgencia PRL**: gravedad y rapidez preventiva propuesta para el riesgo.
+- **Incertidumbre técnica**: señales observables que aconsejan extremar la
+  comprobación de la salida de IA.
+- **Prioridad de revisión**: orden recomendado para que una persona técnica
+  atienda la bandeja.
+
+No existe un porcentaje de confianza generado por el LLM. `UncertaintyService`
+devuelve `low` cuando no hay señales; `medium` ante una señal; y `high` ante dos
+o más señales o varias reparaciones. Las señales cerradas son: salida reparada,
+varias reparaciones, categoría `otros`, evidencia incompleta y retry técnico del
+proveedor. Un retry se detecta cuando los intentos superan las dos llamadas
+lógicas normales —herramienta y salida— más las reparaciones realizadas.
+
+`ReviewPriorityService` parte de la urgencia: baja, media, alta o crítica. La
+incertidumbre alta y una recurrencia en la misma ubicación elevan cada una un
+nivel, con tope `high`; por tanto, ninguna señal técnica o similitud puede crear
+por sí sola una prioridad crítica. La recurrencia en otra ubicación queda como
+razón auditable, pero no eleva el nivel. Una urgencia crítica nunca se reduce.
+
+```json
+{
+  "uncertainty": {
+    "level": "medium",
+    "reasons": ["provider_output_repaired"]
+  },
+  "review_priority": {
+    "level": "high",
+    "reasons": ["high_urgency", "recurrent_same_location"]
+  },
+  "review_policy_version": "v1"
+}
+```
+
+Los tres campos se guardan con la ejecución. `GET /api/v1/notices` admite
+`review_priority=low|medium|high|critical` y
+`order=newest|review_priority`; el orden predeterminado continúa siendo el más
+reciente. Las filas creadas antes de esta política conservan valores nulos: no se
+recalculan con reglas nuevas sin versionado.
+
+La política `v1` no usa `precheck_unavailable`: el contrato backward-compatible
+de `/triage` no conserva si la persona pulsó «Continuar sin comprobación». Ese
+estado podrá incorporarse en una versión futura si pasa a formar parte del flujo
+operativo persistido.
+
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
 La SPA consulta esa misma versión mediante `GET /api/v1/risk-matrix` y muestra
@@ -350,8 +440,10 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 El triaje sigue este flujo acotado:
 
 ```text
-aviso → anonimización → categoría inicial → matriz PRL → recuperación documental
-      → LLM → contrato Pydantic → revisión humana
+aviso → anonimización → precheck → [aclaración si falta información] → triaje
+      → matriz PRL → recuperación documental → LLM → contrato Pydantic
+      → embedding → similitud → incertidumbre → prioridad de revisión
+      → persistencia → revisión humana
 ```
 
 Después de que la herramienta valida una categoría cerrada, el recuperador

@@ -130,12 +130,14 @@ describe("cliente de FastAPI", () => {
       urgency: "alta",
       category: "riesgo_electrico",
       provider: "local",
+      review_priority: "high",
+      order: "review_priority",
       page: 2,
       limit: 20,
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/notices?search=cuadro+el%C3%A9ctrico&status=pending_review&closed=false&urgency=alta&provider=local&category=riesgo_electrico&page=2&limit=20",
+      "/api/v1/notices?search=cuadro+el%C3%A9ctrico&status=pending_review&closed=false&urgency=alta&provider=local&category=riesgo_electrico&review_priority=high&order=review_priority&page=2&limit=20",
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });

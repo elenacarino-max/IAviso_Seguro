@@ -53,6 +53,35 @@ const catalogs = {
   departments: ["prevencion", "mantenimiento", "seguridad", "limpieza"],
 };
 
+const sufficientPrecheck = {
+  available: true,
+  sufficient: true,
+  questions: [],
+  missing_aspects: [],
+  privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+};
+
+const basicTriageResponse = {
+  notice_id: "n-prechecked",
+  triage_run_id: "r-prechecked",
+  status: "pending_review",
+  version: 0,
+  provider: "local",
+  model: "llama3.2:3b",
+  created_at: "2026-09-13T10:00:00Z",
+  category: "riesgo_electrico",
+  urgency: "alta",
+  summary: "Humo visible requiere aislar zona y activar revisión profesional inmediata.",
+  department: "mantenimiento",
+  justification: "Propuesta sintética.",
+  metrics: { evidence: [] },
+  privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+  similarity: { available: false, has_similar: false, match_count: 0, matches: [] },
+  uncertainty: { level: "medium", reasons: ["provider_output_repaired"] },
+  review_priority: { level: "high", reasons: ["high_urgency"] },
+  review_policy_version: "v1",
+};
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -120,8 +149,125 @@ describe("IAviso Seguro", () => {
     expect(screen.getByRole("textbox", { name: "Caso sintético" })).toHaveAttribute("maxlength", "4000");
   });
 
+  it("pide aclaraciones, no crea propuesta y permite editar el mismo aviso", async () => {
+    const postCalls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/v1/triage/precheck" && init?.method === "POST") {
+        postCalls.push("precheck");
+        const body = JSON.parse(String(init.body));
+        if (body.text === "Hay un problema.") {
+          return new Response(JSON.stringify({
+            available: true,
+            sufficient: false,
+            questions: [
+              "¿Qué peligro concreto has observado?",
+              "¿Hay personas expuestas actualmente?",
+              "¿Existe alguna señal de peligro inmediato?",
+            ],
+            missing_aspects: ["hazard", "exposure", "immediacy"],
+            privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
+      }
+      if (path === "/api/v1/triage" && init?.method === "POST") {
+        postCalls.push("triage");
+        return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+    const textarea = screen.getByRole("textbox", { name: "¿Qué has observado?" });
+
+    await userEvent.type(textarea, "Hay un problema.");
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    const clarification = await screen.findByLabelText("Información insuficiente");
+    expect(within(clarification).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(clarification).getByText(/Amplía la descripción/i)).toBeInTheDocument();
+    expect(screen.queryByText("Propuesta creada")).not.toBeInTheDocument();
+    expect(postCalls).toEqual(["precheck"]);
+
+    await userEvent.clear(textarea);
+    await userEvent.type(textarea, "Hay humo saliendo del cuadro eléctrico.");
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    expect(await screen.findByText("Propuesta creada")).toBeInTheDocument();
+    expect(postCalls).toEqual(["precheck", "precheck", "triage"]);
+  });
+
+  it("muestra el fallo técnico y permite continuar de forma explícita", async () => {
+    let triageCalls = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/v1/triage/precheck" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          available: false,
+          sufficient: null,
+          questions: [],
+          missing_aspects: [],
+          privacy: {
+            redacted: true,
+            redaction_count: 1,
+            redaction_types: ["EMAIL"],
+          },
+        }), { status: 200 });
+      }
+      if (path === "/api/v1/triage" && init?.method === "POST") {
+        triageCalls += 1;
+        return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "¿Qué has observado?" }),
+      "Hay un problema comunicado por juan@email.com.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    const unavailable = await screen.findByLabelText("Precheck no disponible");
+    expect(within(unavailable).getByText(/No se ha afirmado que el aviso sea suficiente/i)).toBeInTheDocument();
+    expect(within(unavailable).getByText(/Se anonimizó 1 dato personal/i)).toBeInTheDocument();
+    expect(triageCalls).toBe(0);
+
+    await userEvent.click(
+      within(unavailable).getByRole("button", { name: "Continuar sin comprobación" }),
+    );
+    expect(await screen.findByText("Propuesta creada")).toBeInTheDocument();
+    expect(triageCalls).toBe(1);
+  });
+
+  it("separa prioridad de revisión e incertidumbre sin mostrar confianza", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
+        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
+      }
+      if (String(input) === "/api/v1/triage" && init?.method === "POST") {
+        return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+
+    await userEvent.type(screen.getByRole("textbox", { name: "¿Qué has observado?" }), "Cable expuesto en el taller.");
+    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
+
+    const policy = await screen.findByLabelText("Prioridad e incertidumbre técnica");
+    expect(within(policy).getByText("Prioridad de revisión")).toBeInTheDocument();
+    expect(within(policy).getByText("Incertidumbre técnica")).toBeInTheDocument();
+    expect(within(policy).getByText("La salida necesitó una corrección automática.")).toBeInTheDocument();
+    expect(within(policy).getByText(/No es confianza del modelo/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Confianza IA/i)).not.toBeInTheDocument();
+  });
+
   it("informa de forma discreta cuando el backend anonimiza el aviso", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
+        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
+      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-private",
@@ -169,6 +315,9 @@ describe("IAviso Seguro", () => {
 
   it("muestra coincidencias como similitud semántica y no como confianza", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
+        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
+      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-current",
@@ -224,6 +373,9 @@ describe("IAviso Seguro", () => {
 
   it("no ocupa espacio cuando la similitud está disponible pero no hay coincidencias", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
+        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
+      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-without-matches",
@@ -423,6 +575,14 @@ describe("IAviso Seguro", () => {
           acceptance_rate: 0.8,
           correction_rate: 0.2,
           rejection_rate: 0,
+          review_policy_observations: 12,
+          pending_high_priority: 1,
+          pending_critical_priority: 1,
+          uncertainty: [
+            { level: "low", runs: 6, rate: 0.5, reviewed_runs: 5, human_correction_rate: 0.1 },
+            { level: "medium", runs: 4, rate: 0.3333, reviewed_runs: 3, human_correction_rate: 0.3333 },
+            { level: "high", runs: 2, rate: 0.1667, reviewed_runs: 2, human_correction_rate: 0.5 },
+          ],
           providers: [
             { provider: "local", models: ["llama3.2:3b"], runs: 6, reviewed_runs: 5, mean_latency_ms: 2180, mean_provider_attempts: 2.2, repair_rate: 0.14, mean_repair_attempts: 0.14, success_rate: 1, json_valid_rate: 1, human_agreement_rate: 0.8, mean_total_tokens: 120, token_observations: 6, mean_api_cost: "0", api_cost_currency: null, cost_observations: 6, temperatures: [0], top_p_values: [0.9] },
             { provider: "external", models: ["gemini-prueba"], runs: 6, reviewed_runs: 5, mean_latency_ms: 740, mean_provider_attempts: 2, repair_rate: 0.02, mean_repair_attempts: 0.02, success_rate: 1, json_valid_rate: 1, human_agreement_rate: 0.94, mean_total_tokens: 100, token_observations: 6, mean_api_cost: "0.0004", api_cost_currency: "USD", cost_observations: 6, temperatures: [0], top_p_values: [0.9] },
@@ -445,6 +605,38 @@ describe("IAviso Seguro", () => {
     expect(screen.getAllByText("Acuerdo con técnico")).toHaveLength(2);
     expect(screen.getAllByText("Salidas reparadas")).toHaveLength(2);
     expect(screen.getByText("Aprobadas sin cambios")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Incertidumbre técnica y corrección" })).toBeInTheDocument();
+    expect(screen.getByText("Incertidumbre Alta")).toBeInTheDocument();
+    expect(screen.getAllByText("50%").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("muestra N/A cuando no existen propuestas con política versionada", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/api/v1/metrics/summary") {
+        const emptyProvider = { models: [], runs: 0, reviewed_runs: 0, mean_latency_ms: null, mean_provider_attempts: null, repair_rate: null, mean_repair_attempts: null, success_rate: null, json_valid_rate: null, json_valid_observations: 0, human_agreement_rate: null, mean_total_tokens: null, token_observations: 0, mean_api_cost: null, api_cost_currency: null, cost_observations: 0, temperatures: [], top_p_values: [] };
+        return new Response(JSON.stringify({
+          total_notices: 0, total_runs: 0, pending_review: 0, reviewed: 0,
+          approved: 0, modified: 0, rejected: 0, acceptance_rate: null,
+          correction_rate: null, rejection_rate: null,
+          review_policy_observations: 0, pending_high_priority: 0,
+          pending_critical_priority: 0,
+          uncertainty: [
+            { level: "low", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+            { level: "medium", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+            { level: "high", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+          ],
+          providers: [
+            { ...emptyProvider, provider: "local" },
+            { ...emptyProvider, provider: "external" },
+          ],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Panel/ }));
+
+    expect(await screen.findByText(/N\/A · Aún no hay propuestas/i)).toBeInTheDocument();
   });
 
   it("contrasta ambos modelos y registra la decisión humana", async () => {
@@ -537,6 +729,9 @@ describe("IAviso Seguro", () => {
             urgency: "alta",
           }],
         },
+        uncertainty: { level: "high", reasons: ["generic_category", "incomplete_evidence"] },
+        review_priority: { level: "high", reasons: ["high_urgency", "high_uncertainty", "recurrent_same_location"] },
+        review_policy_version: "v1",
         proposal: { category: "riesgo_electrico", urgency: "alta", summary: "Cable recalentado que requiere revisión técnica prioritaria.", department: "mantenimiento", justification: "Regla sintética." },
         review: { id: "review-1", decision: "modified", final_classification: { category: "riesgo_electrico", urgency: "critica", department: "seguridad" }, reviewer: "Técnica PRL", comment: "Se eleva la prioridad.", created_at: "2026-09-11T10:48:00Z" },
       }],
@@ -568,6 +763,9 @@ describe("IAviso Seguro", () => {
     expect(screen.getByText("Urgencia: Alta → Crítica")).toBeInTheDocument();
     expect(screen.getByText(/Clasificación final: Riesgo eléctrico · Crítica · Seguridad/)).toBeInTheDocument();
     expect(screen.getByLabelText("Posibles avisos relacionados")).toBeInTheDocument();
+    expect(screen.getByText("La propuesta presenta incertidumbre técnica alta.")).toBeInTheDocument();
+    expect(screen.getByText("Existen avisos similares en la misma zona.")).toBeInTheDocument();
+    expect(screen.getByText("Política v1")).toBeInTheDocument();
     expect(fetchSpy.mock.calls.some(([input]) => String(input).includes("closed=true"))).toBe(true);
   });
 
@@ -584,11 +782,14 @@ describe("IAviso Seguro", () => {
         version: 0,
         proposal: {
           category: "caidas_obstaculos",
-          urgency: "alta",
+          urgency: "critica",
           summary: "Cable atravesando zona de paso requiere revisión preventiva técnica prioritaria.",
           department: "mantenimiento",
           justification: "Regla sintética.",
         },
+        uncertainty: { level: "low", reasons: [] },
+        review_priority: { level: "critical", reasons: ["critical_urgency"] },
+        review_policy_version: "v1",
       }],
     }];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
@@ -611,6 +812,8 @@ describe("IAviso Seguro", () => {
     render(<App />);
     await user.click(screen.getByRole("button", { name: /Bandeja/ }));
     await user.click(await screen.findByRole("button", { name: /Cable atravesando/ }));
+    expect(document.querySelector(".priority-critical")).toHaveTextContent("Crítica");
+    expect(document.querySelector(".urgency.danger")).toHaveTextContent("Crítica");
     expect(await screen.findByText("Auditoría HITL")).toBeInTheDocument();
     expect(screen.getByText("Ollama · local propone")).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "Corregir" }));
@@ -622,5 +825,25 @@ describe("IAviso Seguro", () => {
     expect(category.querySelectorAll("option")).toHaveLength(9);
     expect(urgency.querySelectorAll("option")).toHaveLength(4);
     expect(department.querySelectorAll("option")).toHaveLength(4);
+  });
+
+  it("filtra y ordena la bandeja por prioridad de revisión", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/api/v1/catalogs") return new Response(JSON.stringify(catalogs), { status: 200 });
+      if (String(input).startsWith("/api/v1/notices")) {
+        return new Response(JSON.stringify({ items: [], page: 1, limit: 20, total: 0, pages: 0 }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Bandeja/ }));
+
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Prioridad" }), "high");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Orden" }), "review_priority");
+
+    expect(fetchSpy.mock.calls.some(([input]) => {
+      const url = String(input);
+      return url.includes("review_priority=high") && url.includes("order=review_priority");
+    })).toBe(true);
   });
 });

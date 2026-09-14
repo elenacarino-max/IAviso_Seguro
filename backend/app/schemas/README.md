@@ -21,6 +21,9 @@ al menos uno.
 Los campos no observados son nulos de forma explícita; el coste API y el coste
 computacional son conceptos separados.
 
+`review_policy.py` cierra los niveles y reason codes de incertidumbre y prioridad
+de revisión. Ninguno representa una probabilidad ni razonamiento libre del LLM.
+
 Estos contratos validan la estructura, no la corrección profesional de una
 propuesta. Una revisión humana tampoco representa la resolución operativa del
 riesgo.

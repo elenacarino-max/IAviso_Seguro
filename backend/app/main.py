@@ -10,6 +10,7 @@ from backend.app.api.routes_catalogs import router as catalogs_router
 from backend.app.api.routes_health import router as health_router
 from backend.app.api.routes_knowledge import router as knowledge_router
 from backend.app.api.routes_metrics import router as metrics_router
+from backend.app.api.routes_precheck import router as precheck_router
 from backend.app.api.routes_comparisons import router as comparisons_router
 from backend.app.api.routes_evaluations import router as evaluations_router
 from backend.app.api.routes_notices import router as notices_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     application.include_router(health_router)
     application.include_router(catalogs_router)
     application.include_router(metrics_router)
+    application.include_router(precheck_router)
     application.include_router(triage_router)
     application.include_router(notices_router)
     application.include_router(comparisons_router)

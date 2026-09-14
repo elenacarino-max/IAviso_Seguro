@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.api.routes_health import get_health_service
+from backend.app.api.routes_precheck import get_input_assessment_service
 from backend.app.api.routes_triage import (
     get_notice_repository,
     get_similarity_service,
@@ -16,7 +17,7 @@ from backend.app.main import app
 from backend.app.providers import MockTriageProvider, ToolCall
 from backend.app.repositories import SQLiteNoticeRepository
 from backend.app.schemas import HealthResponse, ServiceHealth
-from backend.app.services import SimilarityService, TriageService
+from backend.app.services import InputAssessmentService, SimilarityService, TriageService
 
 client = TestClient(app)
 
@@ -90,6 +91,26 @@ class RecordingProvider(MockTriageProvider):
         )
 
 
+class CategoryProvider(MockTriageProvider):
+    """Fuerza una categoría cerrada y deja que la matriz determine la urgencia."""
+
+    def __init__(self, category) -> None:
+        self._category = category
+
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
+        if observation is None:
+            return ToolCall(
+                name="consultar_matriz_riesgos",
+                arguments={"category": self._category},
+            )
+        return super().generate(
+            request,
+            observation=observation,
+            repair=repair,
+            tool_call=tool_call,
+        )
+
+
 class DeterministicEmbeddingProvider:
     """Embedding pequeño y controlable para pruebas de extremo a extremo."""
 
@@ -106,6 +127,27 @@ class DeterministicEmbeddingProvider:
         if "tropezado" in text.casefold():
             return (0.98, 0.2)
         return (1.0, 0.0)
+
+
+class RecordingAssessmentProvider:
+    """Devuelve una decisión controlada y conserva solo entradas de prueba."""
+
+    def __init__(self, output, *, fail: bool = False) -> None:
+        self.output = output
+        self.fail = fail
+        self.received = []
+
+    def assess(self, request):
+        self.received.append(request)
+        if self.fail:
+            raise RuntimeError("fallo sintético de precheck")
+        return self.output
+
+
+def enable_precheck(provider) -> None:
+    app.dependency_overrides[get_input_assessment_service] = (
+        lambda: InputAssessmentService(provider)
+    )
 
 
 def enable_similarity(provider, *, threshold: float = 0.75) -> None:
@@ -230,6 +272,147 @@ def test_knowledge_base_endpoint_exposes_only_safe_source_metadata():
     assert all("content" not in source for source in body["sources"])
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hay humo saliendo del cuadro eléctrico.",
+        "Fuego en el cuadro eléctrico.",
+    ],
+)
+def test_precheck_accepts_sufficient_and_short_but_concrete_notices(text):
+    provider = RecordingAssessmentProvider(
+        {"sufficient": True, "questions": (), "missing_aspects": ()}
+    )
+    enable_precheck(provider)
+
+    response = client.post(
+        "/api/v1/triage/precheck",
+        json={"text": text, "provider": "local", "location": None},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["sufficient"] is True
+    assert body["questions"] == []
+    assert "uncertainty" not in body
+    assert "review_priority" not in body
+    assert provider.received[0].text == text
+
+
+def test_insufficient_precheck_does_not_start_or_persist_triage(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    triage_provider = RecordingProvider()
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(
+        triage_provider
+    )
+    assessment_provider = RecordingAssessmentProvider(
+        {
+            "sufficient": False,
+            "questions": (
+                "¿Qué peligro concreto has observado?",
+                "¿Hay personas expuestas actualmente?",
+                "¿Existe alguna señal de peligro inmediato?",
+            ),
+            "missing_aspects": ("hazard", "exposure", "immediacy"),
+        }
+    )
+    enable_precheck(assessment_provider)
+    metrics_before = client.get("/api/v1/metrics/summary").json()
+
+    response = client.post(
+        "/api/v1/triage/precheck",
+        json={"text": "Hay un problema.", "provider": "external"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is True
+    assert body["sufficient"] is False
+    assert 1 <= len(body["questions"]) <= 3
+    assert assessment_provider.received[0].provider == "external"
+    assert triage_provider.received_texts == []
+    assert repository.list_notices() == ()
+    assert repository.list_notice_embeddings("embed-test") == ()
+    assert client.get("/api/v1/metrics/summary").json() == metrics_before
+    with sqlite3.connect(repository._database_path) as connection:
+        for table in ("notices", "triage_runs", "audit_events", "notice_embeddings"):
+            assert connection.execute(
+                f"SELECT COUNT(*) FROM {table}"
+            ).fetchone()[0] == 0
+
+
+def test_precheck_anonymizes_before_provider_without_logging_or_persisting_pii(
+    use_mock_provider_for_contract_tests,
+    caplog,
+):
+    repository = use_mock_provider_for_contract_tests
+    provider = RecordingAssessmentProvider(
+        {"sufficient": True, "questions": (), "missing_aspects": ()}
+    )
+    enable_precheck(provider)
+
+    response = client.post(
+        "/api/v1/triage/precheck",
+        json={
+            "text": "Juan informa desde juan@email.com de humo en el cuadro.",
+            "provider": "local",
+            "location": "Contacto 612 345 678",
+        },
+    )
+
+    assert response.status_code == 200
+    assert provider.received[0].text == (
+        "Juan informa desde [EMAIL] de humo en el cuadro."
+    )
+    assert provider.received[0].location == "Contacto [PHONE]"
+    assert response.json()["privacy"] == {
+        "redacted": True,
+        "redaction_count": 2,
+        "redaction_types": ["EMAIL", "PHONE"],
+    }
+    assert repository.list_notices() == ()
+    assert "juan@email.com" not in response.text
+    assert "juan@email.com" not in caplog.text
+    assert "612 345 678" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "assessment_provider",
+    [
+        RecordingAssessmentProvider("{json inválido"),
+        RecordingAssessmentProvider(None, fail=True),
+    ],
+)
+def test_precheck_failure_is_explicit_and_does_not_create_notice(
+    assessment_provider,
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    enable_precheck(assessment_provider)
+
+    response = client.post(
+        "/api/v1/triage/precheck",
+        json={"text": "Hay un problema.", "provider": "local"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "available": False,
+        "sufficient": None,
+        "questions": [],
+        "missing_aspects": [],
+        "privacy": {
+            "redacted": False,
+            "redaction_count": 0,
+            "redaction_types": [],
+        },
+    }
+    assert repository.list_notices() == ()
+
+
 @pytest.mark.parametrize("provider", ["local", "external"])
 def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider):
     response = client.post(
@@ -273,6 +456,15 @@ def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider
         "match_count": 0,
         "matches": [],
     }
+    assert result["uncertainty"] == {
+        "level": "medium",
+        "reasons": ["generic_category"],
+    }
+    assert result["review_priority"] == {
+        "level": "medium",
+        "reasons": ["medium_urgency"],
+    }
+    assert result["review_policy_version"] == "v1"
 
 
 def test_triage_anonymizes_before_provider_persistence_and_logs(
@@ -310,6 +502,7 @@ def test_triage_anonymizes_before_provider_persistence_and_logs(
     notices = repository.list_notices()
     assert len(notices) == 1
     assert notices[0].text == expected
+    assert notices[0].triage_runs[0].review_policy_version == "v1"
     assert all(value not in response.text for value in original_values)
     assert all(value not in caplog.text for value in original_values)
 
@@ -360,6 +553,7 @@ def test_embedding_failure_does_not_block_triage(
 
     assert response.status_code == 200
     assert response.json()["similarity"]["available"] is False
+    assert response.json()["review_priority"]["level"] == "medium"
     assert len(repository.list_notices()) == 1
     assert repository.list_notice_embeddings("embed-test") == ()
     assert "juan@email.com" not in caplog.text
@@ -401,6 +595,8 @@ def test_later_notice_finds_similar_history_but_not_unrelated_notice(
     assert related["similarity"]["has_similar"] is True
     assert related["similarity"]["matches"][0]["notice_id"] == first["notice_id"]
     assert related["similarity"]["matches"][0]["same_location"] is True
+    assert related["review_priority"]["level"] == "high"
+    assert "recurrent_same_location" in related["review_priority"]["reasons"]
     assert unrelated["similarity"]["has_similar"] is False
 
 
@@ -461,6 +657,8 @@ def test_comparison_uses_same_input_without_creating_notices(
     assert body["results"][0]["metrics"]["api_cost"] == "0"
     assert body["results"][1]["metrics"]["api_cost"] is None
     assert body["privacy"]["redacted"] is False
+    assert "review_priority" not in body
+    assert all("review_priority" not in item for item in body["results"])
     assert repository.list_notices() == ()
 
 
@@ -538,6 +736,7 @@ def test_evaluation_exposes_quality_latency_and_cost_without_creating_notices(
     assert all(item["department_accuracy"] is not None for item in body["summaries"])
     assert all(item["mean_latency_ms"] is not None for item in body["summaries"])
     assert body["summaries"][0]["mean_api_cost"] == "0"
+    assert all("review_priority" not in item for item in body["summaries"])
     assert repository.list_notices() == ()
 
 
@@ -578,6 +777,16 @@ def test_metrics_summary_compares_providers_against_human_reviews():
     assert body["reviewed"] == 2
     assert body["acceptance_rate"] == 0.5
     assert body["correction_rate"] == 0.5
+    assert body["review_policy_observations"] == 2
+    assert [item["level"] for item in body["uncertainty"]] == [
+        "low",
+        "medium",
+        "high",
+    ]
+    medium = next(item for item in body["uncertainty"] if item["level"] == "medium")
+    assert medium["rate"] == 1
+    assert medium["reviewed_runs"] == 2
+    assert medium["human_correction_rate"] == 0.5
     by_provider = {item["provider"]: item for item in body["providers"]}
     assert by_provider["local"]["human_agreement_rate"] == 1
     assert by_provider["external"]["human_agreement_rate"] == 0
@@ -642,6 +851,24 @@ def test_metrics_summary_includes_reviewed_comparison_executions():
     assert all(item["reviewed_runs"] == 1 for item in body["providers"])
     assert all(item["human_agreement_rate"] == 1 for item in body["providers"])
     assert all(item["success_rate"] == 1 for item in body["providers"])
+    assert body["review_policy_observations"] == 0
+
+
+def test_metrics_summary_counts_pending_critical_review_priority():
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(
+        CategoryProvider("incendio")
+    )
+
+    created = client.post(
+        "/api/v1/triage",
+        json={"text": "Hay fuego en el cuadro eléctrico.", "provider": "local"},
+    )
+    summary = client.get("/api/v1/metrics/summary")
+
+    assert created.status_code == 200
+    assert created.json()["review_priority"]["level"] == "critical"
+    assert summary.json()["pending_critical_priority"] == 1
+    assert summary.json()["pending_high_priority"] == 0
 
 
 def test_notice_can_be_listed_and_modified_once():
@@ -754,7 +981,16 @@ def test_notices_support_typed_filters_search_and_pagination():
     pending = client.get("/api/v1/notices", params={"closed": "false"})
     assert pending.json()["total"] == 1
     assert pending.json()["items"][0]["triage_runs"][0]["status"] == "pending_review"
+    by_priority = client.get(
+        "/api/v1/notices",
+        params={"review_priority": "medium", "order": "review_priority"},
+    )
+    assert by_priority.status_code == 200
+    assert by_priority.json()["total"] == 2
     assert client.get("/api/v1/notices", params={"status": "otro"}).status_code == 422
+    assert client.get(
+        "/api/v1/notices", params={"review_priority": "urgent"}
+    ).status_code == 422
     assert client.get("/api/v1/notices", params={"limit": 101}).status_code == 422
 
 

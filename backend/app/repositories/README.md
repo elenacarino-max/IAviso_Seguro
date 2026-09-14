@@ -12,7 +12,8 @@ rechazo no tiene clasificación final aceptada.
 
 Cada ejecución conserva sus métricas como JSON validado. Las comparaciones se
 guardan en tablas propias y no escriben en `notices`; una migración aditiva
-incorpora `metrics_json` a bases creadas por versiones anteriores.
+incorpora métricas, similitud e indicadores versionados de revisión a bases
+creadas por versiones anteriores. Las filas antiguas no se recalculan.
 
 Los tests usan archivos temporales y ejercitan aprobación, modificación,
 rechazo, duplicados, versiones obsoletas y dos revisores concurrentes.

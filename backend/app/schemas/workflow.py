@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from .catalogs import Category, Department, Provider, Urgency
 from .metrics import ExecutionMetrics
 from .privacy import PrivacyMetadata
+from .review_policy import (
+    ReviewPolicyVersion,
+    ReviewPriorityAssessment,
+    UncertaintyAssessment,
+)
 from .similarity import SimilarityResult
 from .triage import TriageResult
 
@@ -72,6 +77,9 @@ class TriageProposalResponse(TriageResult):
     metrics: ExecutionMetrics
     privacy: PrivacyMetadata = PrivacyMetadata()
     similarity: SimilarityResult = SimilarityResult()
+    uncertainty: UncertaintyAssessment
+    review_priority: ReviewPriorityAssessment
+    review_policy_version: ReviewPolicyVersion
 
 
 class ReviewRecord(WorkflowContract):
@@ -94,6 +102,9 @@ class TriageRunRecord(WorkflowContract):
     created_at: datetime
     metrics: ExecutionMetrics | None
     similarity: SimilarityResult = SimilarityResult()
+    uncertainty: UncertaintyAssessment | None = None
+    review_priority: ReviewPriorityAssessment | None = None
+    review_policy_version: ReviewPolicyVersion | None = None
     review: ReviewRecord | None
 
 

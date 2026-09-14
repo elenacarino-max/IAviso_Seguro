@@ -11,6 +11,8 @@ from backend.app.schemas import (
     Provider,
     ProviderMetricsSummary,
     TriageRunRecord,
+    UncertaintyLevel,
+    UncertaintyLevelSummary,
 )
 
 
@@ -31,6 +33,13 @@ class MetricsSummaryService:
         modified = sum(run.status == "modified" for run in runs)
         rejected = sum(run.status == "rejected" for run in runs)
         reviewed = approved + modified + rejected
+        policy_runs = tuple(
+            run
+            for run in runs
+            if run.uncertainty is not None
+            and run.review_priority is not None
+            and run.review_policy_version is not None
+        )
         return MetricsSummary(
             total_notices=len(notices),
             total_runs=len(runs) + len(comparison_runs),
@@ -42,9 +51,51 @@ class MetricsSummaryService:
             acceptance_rate=(approved / reviewed if reviewed else None),
             correction_rate=(modified / reviewed if reviewed else None),
             rejection_rate=(rejected / reviewed if reviewed else None),
+            review_policy_observations=len(policy_runs),
+            pending_high_priority=sum(
+                run.status == "pending_review"
+                and run.review_priority is not None
+                and run.review_priority.level == "high"
+                for run in policy_runs
+            ),
+            pending_critical_priority=sum(
+                run.status == "pending_review"
+                and run.review_priority is not None
+                and run.review_priority.level == "critical"
+                for run in policy_runs
+            ),
+            uncertainty=tuple(
+                self._uncertainty_summary(level, policy_runs)
+                for level in ("low", "medium", "high")
+            ),
             providers=tuple(
                 self._provider_summary(provider, runs, comparisons)
                 for provider in ("local", "external")
+            ),
+        )
+
+    @staticmethod
+    def _uncertainty_summary(
+        level: UncertaintyLevel,
+        policy_runs: tuple[TriageRunRecord, ...],
+    ) -> UncertaintyLevelSummary:
+        selected = tuple(
+            run
+            for run in policy_runs
+            if run.uncertainty is not None and run.uncertainty.level == level
+        )
+        reviewed = tuple(
+            run for run in selected if run.status != "pending_review"
+        )
+        return UncertaintyLevelSummary(
+            level=level,
+            runs=len(selected),
+            rate=(len(selected) / len(policy_runs) if policy_runs else None),
+            reviewed_runs=len(reviewed),
+            human_correction_rate=(
+                sum(run.status == "modified" for run in reviewed) / len(reviewed)
+                if reviewed
+                else None
             ),
         )
 

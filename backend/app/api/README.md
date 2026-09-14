@@ -14,7 +14,8 @@ Rutas HTTP:
   RAG sin exponer los fragmentos completos.
 - `GET /api/v1/notices`: devuelve una página de avisos con sus ejecuciones,
   propuestas y revisiones; admite `search`, `status`, `urgency`, `category`,
-  `provider`, `closed`, `page` y `limit` como filtros tipados.
+  `provider`, `closed`, `review_priority`, `order`, `page` y `limit` como
+  filtros y opciones tipadas.
   `closed=true` alimenta el Registro y excluye pendientes antes de paginar.
 - `GET /api/v1/notices/{notice_id}/audit-events`: devuelve cronológicamente los
   eventos persistidos de creación y revisión del aviso.
@@ -28,7 +29,7 @@ Rutas HTTP:
   proveedores.
 - `GET /api/v1/metrics/summary`: agrega avisos y comparaciones persistidas por proveedor
   y devuelve flujo de revisión, latencia, intentos, reparaciones, validez JSON,
-  tokens, coste, parámetros y acuerdo con la decisión humana.
+  tokens, coste, parámetros, incertidumbre y acuerdo con la decisión humana.
 - `POST /api/v1/evaluations`: ejecuta los 14 casos sintéticos etiquetados con
   ambos proveedores y devuelve exactitud por campo, validez JSON, latencia y
   coste medios sin crear avisos.
