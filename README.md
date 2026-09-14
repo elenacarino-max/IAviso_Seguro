@@ -408,7 +408,7 @@ sus reglas, niveles de urgencia, departamentos y evidencia. La ubicación se
 mantiene como contexto libre opcional porque no existe un catálogo canónico de
 zonas en el alcance acordado.
 
-El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. Los prompts separan sistema, ejemplos sintéticos, aviso, contexto de herramienta y formato. Indican que se ignoren atributos demográficos irrelevantes. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
+El ciclo de triaje admite exactamente una llamada a `consultar_matriz_riesgos`. La herramienta solo acepta la categoría cerrada del dominio; el texto del aviso se trata como datos y no puede seleccionar herramientas ni aportar argumentos adicionales. La matriz no es solo contexto: el backend verifica que la categoría, la urgencia y el departamento finales coincidan con la observación realmente consultada, y cualquier contradicción consume un intento de reparación. Los prompts separan sistema, ejemplos sintéticos, aviso, contexto de herramienta y formato. Indican que se ignoren atributos demográficos irrelevantes. Los logs conservan nombre, argumentos validados, versión y regla aplicada, pero no el texto libre ni la salida completa del proveedor.
 
 Cada respuesta incluye `X-Request-ID`. Los fallos previstos de proveedor,
 herramienta, matriz, persistencia o transición mantienen un cuerpo estable:

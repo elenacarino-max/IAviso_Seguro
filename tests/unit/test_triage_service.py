@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from backend.app.providers import (
+    ProviderCallMetrics,
     ProviderConnectionError,
     ProviderRateLimitError,
     RepairContext,
@@ -45,6 +46,29 @@ class SequenceProvider:
         output = self.outputs.pop(0)
         if isinstance(output, Exception):
             raise output
+        return output
+
+
+class RetryReportingProvider(SequenceProvider):
+    """Simula retries internos del adaptador sin convertirlos en repairs."""
+
+    last_call_metrics: ProviderCallMetrics | None = None
+
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
+        output = super().generate(
+            request,
+            observation=observation,
+            repair=repair,
+            tool_call=tool_call,
+        )
+        self.last_call_metrics = ProviderCallMetrics(
+            provider_attempts=3 if observation is not None else 1,
+            latency_ms=10,
+            input_tokens=None,
+            output_tokens=None,
+            total_tokens=None,
+            success=True,
+        )
         return output
 
 
@@ -170,6 +194,19 @@ def test_provider_errors_are_not_repaired_in_this_phase(triage_request, provider
         )
 
     assert provider.repairs == [None]
+
+
+def test_successful_technical_retries_are_not_counted_as_repairs(triage_request):
+    provider = RetryReportingProvider(TOOL_CALL, VALID_RESULT)
+
+    execution = TriageService(provider).execute(
+        triage_request,
+        request_id="req-provider-retries",
+    )
+
+    assert execution.result is not None
+    assert execution.telemetry.provider_attempts == 4
+    assert execution.telemetry.repair_attempts == 0
 
 
 def test_each_attempt_logs_only_technical_metadata(triage_request):

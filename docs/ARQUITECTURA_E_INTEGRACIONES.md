@@ -191,7 +191,9 @@ recupera documentación ni alimenta la propuesta del LLM.
 ## Matriz y RAG
 
 La matriz activa reside en config/risk_matrix.v1.json y funciona como autoridad
-orientativa de clasificación. El corpus RAG reside en
+estructurada de la propuesta: el backend exige que categoría, urgencia y
+departamento coincidan con la observación consultada y repara cualquier
+contradicción dentro del límite existente. El corpus RAG reside en
 data/knowledge/prevention_docs.v1.json y aporta fragmentos preventivos después
 de que la categoría haya sido validada.
 

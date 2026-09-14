@@ -28,8 +28,14 @@ INCENDIO_RESULT = {
 OTHER_RESULT = {
     **INCENDIO_RESULT,
     "category": "otros",
-    "urgency": "media",
-    "department": "prevencion",
+}
+URGENCY_MISMATCH_RESULT = {**INCENDIO_RESULT, "urgency": "baja"}
+DEPARTMENT_MISMATCH_RESULT = {**INCENDIO_RESULT, "department": "mantenimiento"}
+MULTIPLE_MISMATCH_RESULT = {
+    **INCENDIO_RESULT,
+    "category": "otros",
+    "urgency": "baja",
+    "department": "mantenimiento",
 }
 MATRIX_CALL = ToolCall(
     name="consultar_matriz_riesgos",
@@ -88,6 +94,8 @@ def test_service_executes_tool_with_exact_arguments_before_result(triage_request
         for source in provider.observations[1].retrieved_evidence
     ] == ["RM-INCE-001", "PRL-INCE-02"]
     assert result.category == "incendio"
+    assert result.urgency == "critica"
+    assert result.department == "seguridad"
     assert "RM-INCE-001" in result.justification
 
 
@@ -175,8 +183,89 @@ def test_category_mismatch_is_repaired(triage_request):
 
     assert result.category == "incendio"
     assert provider.repairs[2].validation_errors == (
-        "category:tool_evidence_mismatch",
+        "category:matrix_observation_mismatch:"
+        "debe coincidir con la categoría consultada",
     )
+
+
+def test_urgency_mismatch_is_repaired(triage_request):
+    provider = SequenceProvider(
+        MATRIX_CALL,
+        URGENCY_MISMATCH_RESULT,
+        INCENDIO_RESULT,
+    )
+
+    result = TriageService(provider, max_repair_attempts=1).triage(
+        triage_request,
+        request_id="req-urgency-mismatch",
+    )
+
+    assert result.urgency == "critica"
+    assert provider.repairs[2].validation_errors == (
+        "urgency:matrix_observation_mismatch:"
+        "debe coincidir con recommended_urgency de la observación",
+    )
+
+
+def test_department_mismatch_is_repaired(triage_request):
+    provider = SequenceProvider(
+        MATRIX_CALL,
+        DEPARTMENT_MISMATCH_RESULT,
+        INCENDIO_RESULT,
+    )
+
+    result = TriageService(provider, max_repair_attempts=1).triage(
+        triage_request,
+        request_id="req-department-mismatch",
+    )
+
+    assert result.department == "seguridad"
+    assert provider.repairs[2].validation_errors == (
+        "department:matrix_observation_mismatch:"
+        "debe coincidir con department de la observación",
+    )
+
+
+def test_multiple_matrix_mismatches_use_one_repair_then_continue(triage_request):
+    provider = SequenceProvider(
+        MATRIX_CALL,
+        MULTIPLE_MISMATCH_RESULT,
+        INCENDIO_RESULT,
+    )
+
+    result = TriageService(provider, max_repair_attempts=1).triage(
+        triage_request,
+        request_id="req-multiple-mismatch",
+    )
+
+    assert result.model_dump() == INCENDIO_RESULT
+    assert sum(repair is not None for repair in provider.repairs) == 1
+    assert provider.observations[2] == provider.observations[1]
+    assert provider.repairs[2].validation_errors == (
+        "category:matrix_observation_mismatch:"
+        "debe coincidir con la categoría consultada",
+        "urgency:matrix_observation_mismatch:"
+        "debe coincidir con recommended_urgency de la observación",
+        "department:matrix_observation_mismatch:"
+        "debe coincidir con department de la observación",
+    )
+
+
+def test_persistent_matrix_mismatch_exhausts_repairs(triage_request):
+    provider = SequenceProvider(
+        MATRIX_CALL,
+        URGENCY_MISMATCH_RESULT,
+        URGENCY_MISMATCH_RESULT,
+    )
+
+    with pytest.raises(InvalidProviderOutputError) as captured:
+        TriageService(provider, max_repair_attempts=1).triage(
+            triage_request,
+            request_id="req-persistent-mismatch",
+        )
+
+    assert captured.value.attempts == 2
+    assert sum(repair is not None for repair in provider.repairs) == 1
 
 
 def test_invalid_matrix_from_tool_is_controlled(triage_request, tmp_path):

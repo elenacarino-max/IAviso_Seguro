@@ -39,6 +39,31 @@ _MAX_TOOL_STEPS = 1
 _logger = logging.getLogger("iaviso.triage")
 
 
+def _matrix_coherence_errors(
+    result: TriageResult,
+    observation: RiskMatrixObservation,
+) -> tuple[str, ...]:
+    """Describe solo los campos finales que contradicen la observación real."""
+
+    errors: list[str] = []
+    if result.category != observation.arguments.category:
+        errors.append(
+            "category:matrix_observation_mismatch:"
+            "debe coincidir con la categoría consultada"
+        )
+    if result.urgency != observation.recommended_urgency:
+        errors.append(
+            "urgency:matrix_observation_mismatch:"
+            "debe coincidir con recommended_urgency de la observación"
+        )
+    if result.department != observation.department:
+        errors.append(
+            "department:matrix_observation_mismatch:"
+            "debe coincidir con department de la observación"
+        )
+    return tuple(errors)
+
+
 class TriageService:
     """Valida cada propuesta y solicita reparaciones hasta un límite estricto."""
 
@@ -310,14 +335,15 @@ class TriageService:
                 )
                 continue
 
-            if result.category != observation.arguments.category:
+            coherence_errors = _matrix_coherence_errors(result, observation)
+            if coherence_errors:
                 _logger.warning(
                     "triage_attempt",
                     extra={
                         "request_id": request_id,
                         "attempt": output_attempt,
                         "outcome": "invalid_output",
-                        "error_type": "ToolEvidenceMismatch",
+                        "error_type": "RiskMatrixObservationMismatch",
                     },
                 )
                 if repairs_used == self._max_repair_attempts:
@@ -326,7 +352,7 @@ class TriageService:
                 accumulator.repair_attempts = repairs_used
                 repair = RepairContext(
                     invalid_output=candidate,
-                    validation_errors=("category:tool_evidence_mismatch",),
+                    validation_errors=coherence_errors,
                 )
                 continue
 

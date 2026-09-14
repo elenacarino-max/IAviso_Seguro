@@ -110,6 +110,26 @@ class CategoryProvider(MockTriageProvider):
         )
 
 
+class MatrixContradictingProvider:
+    """Devuelve siempre una propuesta válida en forma, pero incoherente con matriz."""
+
+    def generate(self, request, *, observation=None, repair=None, tool_call=None):
+        if observation is None:
+            return ToolCall(
+                name="consultar_matriz_riesgos",
+                arguments={"category": "otros"},
+            )
+        return {
+            "category": "otros",
+            "urgency": "baja",
+            "summary": (
+                "Aviso recibido correctamente y preparado para revisión humana del técnico."
+            ),
+            "department": "seguridad",
+            "justification": "Propuesta sintética que contradice la matriz de prueba.",
+        }
+
+
 class DeterministicEmbeddingProvider:
     """Embedding pequeño y controlable para pruebas de extremo a extremo."""
 
@@ -309,6 +329,25 @@ def test_triage_contract_accepts_both_provider_names_with_injected_mock(provider
         "reasons": ["medium_urgency"],
     }
     assert result["review_policy_version"] == "v1"
+
+
+def test_matrix_incoherent_proposal_is_never_persisted(
+    use_mock_provider_for_contract_tests,
+):
+    repository = use_mock_provider_for_contract_tests
+    app.dependency_overrides[get_triage_service] = lambda: TriageService(
+        MatrixContradictingProvider(),
+        max_repair_attempts=1,
+    )
+
+    response = client.post(
+        "/api/v1/triage",
+        json={"text": "Aviso sintético incoherente.", "provider": "local"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "invalid_provider_output"
+    assert repository.list_notices() == ()
 
 
 @pytest.mark.parametrize(
