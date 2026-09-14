@@ -22,8 +22,8 @@ técnica conserva siempre la decisión final.
 - Anonimizar PII conocida antes de consultar modelos o guardar el aviso.
 - Detectar posibles riesgos recurrentes mediante embeddings locales de avisos
   ya anonimizados.
-- Pedir hasta tres aclaraciones cuando el peligro descrito sea claramente
-  insuficiente, antes de crear ningún aviso.
+- Enviar directamente a triaje los avisos breves que cumplan el contrato básico,
+  sin un paso previo de preguntas aclaratorias.
 - Calcular una incertidumbre técnica y una prioridad de revisión deterministas,
   versionadas y separadas de la urgencia preventiva.
 
