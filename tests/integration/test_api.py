@@ -637,6 +637,8 @@ def test_evaluation_exposes_quality_latency_and_cost_without_creating_notices(
         "external",
     ]
     assert all(item["cases"] == 14 for item in body["summaries"])
+    assert all(item["evaluated_cases"] == 14 for item in body["summaries"])
+    assert all(item["failed_cases"] == 0 for item in body["summaries"])
     assert all(item["category_accuracy"] is not None for item in body["summaries"])
     assert all(item["urgency_accuracy"] is not None for item in body["summaries"])
     assert all(item["department_accuracy"] is not None for item in body["summaries"])

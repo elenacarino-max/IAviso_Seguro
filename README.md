@@ -492,7 +492,9 @@ El «benchmark» es una prueba comparativa controlada: ejecuta los mismos 14 cas
 sintéticos etiquetados con Ollama y Gemini y contrasta exactitud de categoría,
 urgencia y departamento, validez JSON, latencia y coste. Sirve para comparar
 estos proveedores dentro del proyecto; no demuestra cuál es el mejor modelo
-para cualquier tarea.
+para cualquier tarea. La calidad se calcula exclusivamente sobre ejecuciones
+evaluables; los fallos técnicos se muestran por separado y nunca se interpretan
+como una exactitud del 0 %.
 
 SQLite ya conserva la tarjeta operativa completa: texto y ubicación del aviso,
 propuesta del agente, departamento propuesto, métricas y evidencia, decisión
@@ -513,7 +515,10 @@ transición y cambios de clasificación. El panel consume el resumen histórico 
 contrastar rendimiento, robustez, coste y acuerdo humano de Ollama y Gemini. La
 comparación de un caso destaca coincidencias por campo, el modelo más rápido,
 las reparaciones y el coste; después permite registrar una única clasificación
-humana y muestra cuántos campos acertó cada proveedor. La vista comparativa también
+humana y muestra cuántos campos acertó cada proveedor. Las comparaciones de
+latencia, coste y resultados solo se realizan entre ejecuciones válidas; un
+proveedor no disponible no se considera ganador por sus valores parciales o
+nulos. La vista comparativa también
 permite ejecutar bajo demanda el dataset
 sintético completo: cada proveedor procesa los mismos 14 casos y se muestran la
 exactitud de categoría, urgencia y departamento, la tasa de JSON válido, la

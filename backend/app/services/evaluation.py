@@ -115,41 +115,43 @@ class EvaluationService:
         observations: list[EvaluationObservation],
         expected: dict[str, EvaluationCase],
     ) -> ProviderEvaluationSummary:
-        count = len(observations)
-        if not count:
-            return ProviderEvaluationSummary(
-                provider=provider,
-                cases=0,
-                api_cost_currency=None,
-                reviewed_notices=0,
-            )
+        total_count = len(expected)
+        evaluable = [item for item in observations if item.result is not None]
+        evaluated_count = len(evaluable)
+        failed_count = total_count - evaluated_count
 
-        def accuracy(field: str) -> float:
+        def accuracy(field: str) -> float | None:
+            if not evaluated_count:
+                return None
             hits = 0
-            for item in observations:
+            for item in evaluable:
                 case = expected[item.case_id]
                 result = item.result
                 if result is not None and getattr(result, field) == getattr(
                     case, f"expected_{field}"
                 ):
                     hits += 1
-            return hits / count
+            return hits / evaluated_count
 
-        json_values = [item.metrics.json_valid for item in observations]
+        json_values = [
+            item.metrics.json_valid
+            for item in observations
+            if item.metrics.json_valid is not None
+        ]
         json_rate = (
-            sum(value is True for value in json_values) / count
-            if all(value is not None for value in json_values)
+            sum(value is True for value in json_values) / len(json_values)
+            if json_values
             else None
         )
-        costs = [item.metrics.api_cost for item in observations]
-        currencies = {item.metrics.api_cost_currency for item in observations}
+        costs = [item.metrics.api_cost for item in evaluable]
+        currencies = {item.metrics.api_cost_currency for item in evaluable}
         mean_cost: Decimal | None = None
         currency: str | None = None
-        if all(value is not None for value in costs) and len(currencies) == 1:
+        if costs and all(value is not None for value in costs) and len(currencies) == 1:
             mean_cost = sum(
                 (value for value in costs if value is not None),
                 Decimal(0),
-            ) / Decimal(count)
+            ) / Decimal(evaluated_count)
             currency = next(iter(currencies))
 
         reviewed = [
@@ -166,13 +168,17 @@ class EvaluationService:
         )
         return ProviderEvaluationSummary(
             provider=provider,
-            cases=count,
+            cases=total_count,
+            evaluated_cases=evaluated_count,
+            failed_cases=failed_count,
             category_accuracy=accuracy("category"),
             urgency_accuracy=accuracy("urgency"),
             department_accuracy=accuracy("department"),
             json_valid_rate=json_rate,
             mean_latency_ms=(
-                sum(item.metrics.latency_ms for item in observations) / count
+                sum(item.metrics.latency_ms for item in evaluable) / evaluated_count
+                if evaluable
+                else None
             ),
             mean_api_cost=mean_cost,
             api_cost_currency=currency,

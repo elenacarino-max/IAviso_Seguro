@@ -1127,21 +1127,34 @@ function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProvi
   const local = results.find((item) => item.provider === "local");
   const external = results.find((item) => item.provider === "external");
   const both = local?.result && external?.result ? { local: local.result, external: external.result } : null;
+  const unavailableProviders = results
+    .filter((item) => item.result === null)
+    .map((item) => providerNames[item.provider]);
+  const unavailableMessage = unavailableProviders.length === 1
+    ? `No es posible comparar velocidad y coste porque ${unavailableProviders[0]} no produjo una ejecución válida.`
+    : unavailableProviders.length > 1
+      ? "No es posible comparar velocidad y coste porque ningún proveedor produjo una ejecución válida."
+      : null;
   const fields = both ? [
     ["Categoría", both.local.category === both.external.category],
     ["Urgencia", both.local.urgency === both.external.urgency],
     ["Departamento", both.local.department === both.external.department],
   ] as const : [];
-  const faster = local && external
+  const faster = both && local && external
     ? local.metrics.latency_ms <= external.metrics.latency_ms
       ? { provider: "local" as const, difference: external.metrics.latency_ms - local.metrics.latency_ms }
       : { provider: "external" as const, difference: local.metrics.latency_ms - external.metrics.latency_ms }
     : null;
-  const fewerRepairs = local && external
+  const fewerRepairs = both && local && external
     ? local.metrics.repair_attempts === external.metrics.repair_attempts
       ? null
       : local.metrics.repair_attempts < external.metrics.repair_attempts ? "local" as const : "external" as const
     : null;
+  const comparisonCost = (item: ComparisonProviderResult | undefined) => {
+    if (!item?.result) return "No disponible";
+    if (item.metrics.api_cost === null) return "No medido";
+    return `${item.metrics.api_cost}${item.metrics.api_cost_currency ? ` ${item.metrics.api_cost_currency}` : ""}`;
+  };
   const verdictFields = humanReview ? [
     { label: "Categoría", matches: (proposal: TriageProposal) => proposal.category === humanReview.category },
     { label: "Urgencia", matches: (proposal: TriageProposal) => proposal.urgency === humanReview.urgency },
@@ -1161,11 +1174,12 @@ function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProvi
     <header><GitCompareArrows /><div><small>Comparación</small><h2>Lectura directa</h2></div></header>
     <div className="agreement-list">
       {fields.length ? fields.map(([label, matches]) => <div key={label}><span>{label}</span><strong className={matches ? "match" : "mismatch"}>{matches ? "✓ Coinciden" : "⚠ Discrepan"}</strong></div>) : <p>No hay dos resultados válidos para contrastar.</p>}
+      {unavailableMessage && <p>{unavailableMessage}</p>}
     </div>
     <div className="comparison-winners">
-      <div><span>Más rápido</span><strong>{faster ? providerNames[faster.provider] : "—"}</strong><small>{faster ? `${formatDuration(faster.difference)} de diferencia` : "Sin datos"}</small></div>
-      <div><span>Menos reparaciones</span><strong>{fewerRepairs ? providerNames[fewerRepairs] : "Empate"}</strong><small>{local?.metrics.repair_attempts ?? "—"} vs {external?.metrics.repair_attempts ?? "—"}</small></div>
-      <div><span>Coste API</span><small>Ollama <b>{local?.metrics.api_cost ?? "—"}</b></small><small>Gemini <b>{external?.metrics.api_cost ?? "—"} {external?.metrics.api_cost_currency ?? ""}</b></small></div>
+      <div><span>Más rápido</span><strong>{faster ? providerNames[faster.provider] : "No disponible"}</strong><small>{faster ? `${formatDuration(faster.difference)} de diferencia` : "Sin datos comparables"}</small></div>
+      <div><span>Menos reparaciones</span><strong>{both ? fewerRepairs ? providerNames[fewerRepairs] : "Empate" : "No disponible"}</strong><small>{both ? `${local?.metrics.repair_attempts} vs ${external?.metrics.repair_attempts}` : "Sin datos comparables"}</small></div>
+      <div><span>Coste API</span><small>Ollama <b>{comparisonCost(local)}</b></small><small>Gemini <b>{comparisonCost(external)}</b></small></div>
     </div>
     {humanReview && <div className="human-verdict">
       <span>Referencia humana</span>
@@ -1176,7 +1190,7 @@ function ComparisonAnalysis({ results, humanReview }: { results: ComparisonProvi
           const matches = item.result ? field.matches(item.result) : null;
           return <td key={item.provider} className={matches === null ? "" : matches ? "match" : "mismatch"} aria-label={matches === null ? "Sin resultado" : matches ? "Coincide" : "No coincide"}>{matches === null ? "—" : matches ? "✓" : "✕"}</td>;
         })}</tr>)}</tbody>
-        <tfoot><tr><th>Coincidencia</th>{verdictProviders.map((item) => <td key={item.provider} className={item.matches === verdictFields.length ? "match" : "mismatch"}>{item.result ? `${Math.round((item.matches / verdictFields.length) * 100)}%` : "—"}</td>)}</tr></tfoot>
+        <tfoot><tr><th>Coincidencia</th>{verdictProviders.map((item) => <td key={item.provider} className={item.result ? item.matches === verdictFields.length ? "match" : "mismatch" : undefined}>{item.result ? `${Math.round((item.matches / verdictFields.length) * 100)}%` : "—"}</td>)}</tr></tfoot>
       </table>
     </div>}
   </article>;
@@ -1217,6 +1231,7 @@ function ComparisonHumanReview({ comparison, review, catalogs, catalogsError, on
 }
 
 const formatRate = (value: number | null) => value === null ? "—" : `${Math.round(value * 100)}%`;
+const formatBenchmarkRate = (value: number | null) => value === null ? "No disponible" : formatRate(value);
 
 function EvaluationBenchmark() {
   const [report, setReport] = useState<EvaluationReport | null>(null);
@@ -1238,7 +1253,7 @@ function EvaluationBenchmark() {
         <div>
           <span>Benchmark etiquetado</span>
           <h2 id="benchmark-title">Calidad de clasificación medible</h2>
-          <p>14 casos sintéticos × 2 proveedores. La exactitud se calcula contra categoría, urgencia y departamento esperados.</p>
+          <p>14 casos sintéticos × 2 proveedores. La exactitud se calcula solo sobre resultados evaluables.</p>
         </div>
         <button className="secondary-action" type="button" onClick={run} disabled={loading}>
           {loading ? <><LoaderCircle className="spin" /> Ejecutando 28 inferencias…</> : <><RefreshCw /> Ejecutar benchmark</>}
@@ -1258,7 +1273,7 @@ function EvaluationBenchmark() {
               const cost = summary.mean_api_cost === null ? "—" : `${summary.mean_api_cost}${summary.api_cost_currency ? ` ${summary.api_cost_currency}` : ""}`;
               return (
                 <article className="benchmark-card" key={summary.provider}>
-                  <header><div><small>Proveedor</small><h3>{providerNames[summary.provider]}</h3></div><strong>{formatRate(overall)}<small>calidad media</small></strong></header>
+                  <header><div><small>Proveedor</small><h3>{providerNames[summary.provider]}</h3></div><strong>{formatBenchmarkRate(overall)}<small>calidad media</small></strong></header>
                   <div className="quality-bars">
                     {[
                       ["Categoría", summary.category_accuracy],
@@ -1266,14 +1281,14 @@ function EvaluationBenchmark() {
                       ["Departamento", summary.department_accuracy],
                     ].map(([label, raw]) => {
                       const value = typeof raw === "number" ? raw : null;
-                      return <div key={String(label)}><span>{label}</span><i><b style={{ width: `${(value ?? 0) * 100}%` }} /></i><strong>{formatRate(value)}</strong></div>;
+                      return <div key={String(label)}><span>{label}</span><i><b style={{ width: `${(value ?? 0) * 100}%` }} /></i><strong>{formatBenchmarkRate(value)}</strong></div>;
                     })}
                   </div>
                   <dl>
-                    <div><dt>Casos</dt><dd>{summary.cases}</dd></div>
-                    <div><dt>JSON válido</dt><dd>{formatRate(summary.json_valid_rate)}</dd></div>
-                    <div><dt>Latencia media</dt><dd>{summary.mean_latency_ms === null ? "—" : `${Math.round(summary.mean_latency_ms)} ms`}</dd></div>
-                    <div><dt>Coste medio</dt><dd>{cost}</dd></div>
+                    <div><dt>Casos evaluados</dt><dd>{summary.evaluated_cases} de {summary.cases}{summary.failed_cases ? ` · ${summary.failed_cases} sin resultado` : ""}</dd></div>
+                    <div><dt>JSON válido</dt><dd>{formatBenchmarkRate(summary.json_valid_rate)}</dd></div>
+                    <div><dt>Latencia media</dt><dd>{summary.mean_latency_ms === null ? "No disponible" : `${Math.round(summary.mean_latency_ms)} ms`}</dd></div>
+                    <div><dt>Coste medio</dt><dd>{summary.mean_api_cost === null ? "No disponible" : cost}</dd></div>
                   </dl>
                 </article>
               );

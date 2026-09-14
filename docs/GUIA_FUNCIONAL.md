@@ -151,14 +151,17 @@ La pantalla muestra también la versión y el inventario del corpus activo.
 Ejecuta un único caso simultáneamente en Ollama y Gemini. No crea dos avisos.
 Contrasta cada campo, latencia, reparaciones, tokens, coste y evidencia. Cuando
 se registra una referencia humana, muestra por campo qué modelo coincide y su
-porcentaje total.
+porcentaje total. La latencia, el coste y los resultados solo se comparan cuando
+ambos proveedores producen ejecuciones válidas; una indisponibilidad no se
+interpreta como una ventaja.
 
 ### Benchmark
 
 Ejecuta los mismos catorce casos sintéticos etiquetados en ambos proveedores y
 mide exactitud por campo, validez JSON, latencia y coste. Es una evaluación del
 proyecto, no una afirmación universal sobre qué modelo es mejor. Con Gemini
-configurado puede generar consumo de API.
+configurado puede generar consumo de API. La calidad utiliza solo casos
+evaluables; los casos sin resultado se contabilizan aparte y no equivalen a 0 %.
 
 ## Urgencia, incertidumbre y prioridad
 

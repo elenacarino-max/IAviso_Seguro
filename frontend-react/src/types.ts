@@ -400,6 +400,8 @@ export interface UncertaintyLevelSummary {
 export interface ProviderEvaluationSummary {
   provider: Provider;
   cases: number;
+  evaluated_cases: number;
+  failed_cases: number;
   category_accuracy: number | null;
   urgency_accuracy: number | null;
   department_accuracy: number | null;

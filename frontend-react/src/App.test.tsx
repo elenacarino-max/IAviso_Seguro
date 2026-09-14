@@ -143,6 +143,41 @@ const emptyMetricsSummary = {
   ],
 };
 
+const comparisonProposal = {
+  category: "riesgo_electrico",
+  urgency: "alta",
+  department: "mantenimiento",
+  summary: "Cable expuesto requiere aislamiento inmediato y una revisión técnica prioritaria.",
+  justification: "Regla sintética.",
+};
+
+const comparisonMetrics = (
+  provider: "local" | "external",
+  success: boolean,
+  latencyMs: number,
+  apiCost: string | null,
+) => ({
+  provider,
+  model: provider === "local" ? "llama3.2:3b" : "gemini-prueba",
+  parameters: {},
+  started_at: "2026-09-12T10:00:00Z",
+  completed_at: "2026-09-12T10:00:01Z",
+  latency_ms: latencyMs,
+  provider_attempts: 1,
+  repair_attempts: 0,
+  input_tokens: success ? 50 : null,
+  output_tokens: success ? 30 : null,
+  total_tokens: success ? 80 : null,
+  success,
+  json_valid: success ? true : null,
+  error_type: success ? null : "provider_unavailable",
+  api_cost: apiCost,
+  api_cost_currency: provider === "external" && apiCost !== null ? "USD" : null,
+  computational_cost: null,
+  pricing: null,
+  evidence: [],
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -478,13 +513,106 @@ describe("IAviso Seguro", () => {
     await user.click(screen.getByRole("button", { name: "Ejecutar ambos motores" }));
 
     expect(await screen.findByRole("heading", { name: "Riesgo eléctrico" })).toBeInTheDocument();
-    expect(screen.getByText("0 USD")).toBeInTheDocument();
+    expect(screen.getAllByText("0 USD").length).toBeGreaterThan(0);
     expect(screen.getByText("Código: provider_unavailable")).toBeInTheDocument();
     expect(screen.getByText("Explicación del modelo")).toBeInTheDocument();
     expect(screen.getAllByText(/RM-ELEC-001/).length).toBeGreaterThan(0);
     expect(screen.getByText("Ver JSON estructurado")).toBeInTheDocument();
     expect(screen.getByText("Procedimiento interno de riesgo eléctrico")).toBeInTheDocument();
     expect(screen.getByText(/Apartado 3.2/)).toBeInTheDocument();
+    const analysis = screen.getByRole("heading", { name: "Lectura directa" }).closest("article");
+    expect(analysis).not.toBeNull();
+    expect(within(analysis!).getByText(/Gemini · externo no produjo una ejecución válida/)).toBeInTheDocument();
+    expect(within(analysis!).getByText("No hay dos resultados válidos para contrastar.")).toBeInTheDocument();
+    expect(within(analysis!).queryByText("⚠ Discrepan")).not.toBeInTheDocument();
+    const speed = within(analysis!).getByText("Más rápido").closest("div");
+    expect(within(speed!).getByText("No disponible")).toBeInTheDocument();
+    const cost = within(analysis!).getByText("Coste API").closest("div");
+    expect(within(cost!).getByText("0 USD")).toBeInTheDocument();
+    expect(within(cost!).getByText("No disponible")).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      scenario: "ambos válidos y Ollama más rápido",
+      localSuccess: true,
+      externalSuccess: true,
+      localLatency: 400,
+      externalLatency: 900,
+      winner: "Ollama · local",
+      unavailableText: null,
+    },
+    {
+      scenario: "Ollama falla antes que Gemini",
+      localSuccess: false,
+      externalSuccess: true,
+      localLatency: 100,
+      externalLatency: 900,
+      winner: null,
+      unavailableText: /Ollama · local no produjo una ejecución válida/,
+    },
+    {
+      scenario: "ambos proveedores fallan",
+      localSuccess: false,
+      externalSuccess: false,
+      localLatency: 100,
+      externalLatency: 200,
+      winner: null,
+      unavailableText: /ningún proveedor produjo una ejecución válida/,
+    },
+  ])("compara velocidad solo con resultados válidos: $scenario", async ({
+    localSuccess,
+    externalSuccess,
+    localLatency,
+    externalLatency,
+    winner,
+    unavailableText,
+  }) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/catalogs") return new Response(JSON.stringify(catalogs), { status: 200 });
+      if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
+      if (String(input) === "/api/v1/comparisons" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          comparison_id: "comparison-validity",
+          created_at: "2026-09-12T10:00:00Z",
+          review: null,
+          privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
+          results: [
+            {
+              provider: "local",
+              result: localSuccess ? comparisonProposal : null,
+              error_code: localSuccess ? null : "provider_unavailable",
+              metrics: comparisonMetrics("local", localSuccess, localLatency, localSuccess ? "0" : null),
+            },
+            {
+              provider: "external",
+              result: externalSuccess ? comparisonProposal : null,
+              error_code: externalSuccess ? null : "provider_unavailable",
+              metrics: comparisonMetrics("external", externalSuccess, externalLatency, externalSuccess ? "0.0004" : null),
+            },
+          ],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Comparación/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Caso sintético" }), "Cable expuesto");
+    await userEvent.click(screen.getByRole("button", { name: "Ejecutar ambos motores" }));
+
+    const analysis = (await screen.findByRole("heading", { name: "Lectura directa" })).closest("article");
+    const speed = within(analysis!).getByText("Más rápido").closest("div");
+    if (winner) {
+      expect(within(speed!).getByText(winner)).toBeInTheDocument();
+      const cost = within(analysis!).getByText("Coste API").closest("div");
+      expect(within(cost!).getByText("0")).toBeInTheDocument();
+      expect(within(analysis!).queryByText("No disponible")).not.toBeInTheDocument();
+    } else {
+      expect(within(speed!).getByText("No disponible")).toBeInTheDocument();
+      expect(within(analysis!).getByText(unavailableText!)).toBeInTheDocument();
+      expect(within(analysis!).queryByText("⚠ Discrepan")).not.toBeInTheDocument();
+    }
   });
 
   it("muestra calidad, latencia y coste medios del benchmark", async () => {
@@ -501,6 +629,8 @@ describe("IAviso Seguro", () => {
             {
               provider: "local",
               cases: 14,
+              evaluated_cases: 14,
+              failed_cases: 0,
               category_accuracy: 0.8,
               urgency_accuracy: 0.7,
               department_accuracy: 0.6,
@@ -514,6 +644,8 @@ describe("IAviso Seguro", () => {
             {
               provider: "external",
               cases: 14,
+              evaluated_cases: 14,
+              failed_cases: 0,
               category_accuracy: 0.9,
               urgency_accuracy: 0.8,
               department_accuracy: 0.7,
@@ -540,6 +672,52 @@ describe("IAviso Seguro", () => {
     expect(screen.getByText("120 ms")).toBeInTheDocument();
     expect(screen.getByText("0.0012 USD")).toBeInTheDocument();
     expect(screen.getAllByText("80%").length).toBeGreaterThan(0);
+  });
+
+  it("muestra un proveedor no evaluable como no disponible y nunca como cero", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
+      if (String(input) === "/api/v1/evaluations" && init?.method === "POST") {
+        return new Response(JSON.stringify({
+          dataset_version: "1.0.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.",
+          summaries: [
+            { provider: "local", cases: 14, evaluated_cases: 0, failed_cases: 14, category_accuracy: null, urgency_accuracy: null, department_accuracy: null, json_valid_rate: null, mean_latency_ms: null, mean_api_cost: null, api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null },
+            { provider: "external", cases: 14, evaluated_cases: 14, failed_cases: 0, category_accuracy: 0.8, urgency_accuracy: 0.8, department_accuracy: 0.8, json_valid_rate: 1, mean_latency_ms: 240, mean_api_cost: "0.0012", api_cost_currency: "USD", reviewed_notices: 0, human_correction_rate: null },
+          ],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Comparación/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Ejecutar benchmark" }));
+
+    const localCard = (await screen.findByRole("heading", { name: "Ollama · local" })).closest("article");
+    expect(localCard).not.toBeNull();
+    expect(within(localCard!).getAllByText("No disponible").length).toBeGreaterThan(0);
+    expect(within(localCard!).queryByText("0%")).not.toBeInTheDocument();
+    expect(within(localCard!).getByText("0 de 14 · 14 sin resultado")).toBeInTheDocument();
+  });
+
+  it("mantiene el cero por ciento cuando las predicciones evaluables fallan", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
+      if (String(input) === "/api/v1/evaluations" && init?.method === "POST") {
+        const zero = { cases: 14, evaluated_cases: 14, failed_cases: 0, category_accuracy: 0, urgency_accuracy: 0, department_accuracy: 0, json_valid_rate: 1, mean_latency_ms: 120, mean_api_cost: "0", api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null };
+        return new Response(JSON.stringify({ dataset_version: "1.0.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.", summaries: [{ provider: "local", ...zero }, { provider: "external", ...zero }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Comparación/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Ejecutar benchmark" }));
+
+    const localCard = (await screen.findByRole("heading", { name: "Ollama · local" })).closest("article");
+    expect(localCard).not.toBeNull();
+    expect(within(localCard!).getAllByText("0%").length).toBeGreaterThan(0);
+    expect(within(localCard!).queryByText("No disponible")).not.toBeInTheDocument();
   });
 
   it("evalúa el historial por proveedor desde el resumen de la API", async () => {
@@ -717,6 +895,9 @@ describe("IAviso Seguro", () => {
     expect(await screen.findAllByText("✓ Coinciden")).toHaveLength(2);
     expect(screen.getByText("⚠ Discrepan")).toBeInTheDocument();
     expect(screen.getByText("1.50 s de diferencia")).toBeInTheDocument();
+    const analysis = screen.getByRole("heading", { name: "Lectura directa" }).closest("article");
+    const speed = within(analysis!).getByText("Más rápido").closest("div");
+    expect(within(speed!).getByText("Gemini · externo")).toBeInTheDocument();
     await user.type(screen.getByRole("textbox", { name: "Persona revisora" }), "Técnica demo");
     await user.type(screen.getByRole("textbox", { name: "Comentario" }), "Referencia comprobada.");
     await user.click(screen.getByRole("button", { name: "Registrar referencia humana" }));

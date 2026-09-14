@@ -230,10 +230,20 @@ class EvaluationObservation(MetricsContract):
     metrics: ExecutionMetrics
     review_decision: Literal["approved", "modified", "rejected"] | None = None
 
+    @model_validator(mode="after")
+    def result_must_match_execution(self):
+        if self.provider != self.metrics.provider:
+            raise ValueError("El proveedor observado y sus métricas no coinciden.")
+        if self.metrics.success != (self.result is not None):
+            raise ValueError("Solo una ejecución correcta puede ser evaluable.")
+        return self
+
 
 class ProviderEvaluationSummary(MetricsContract):
     provider: Provider
     cases: int = Field(strict=True, ge=0)
+    evaluated_cases: int = Field(strict=True, ge=0)
+    failed_cases: int = Field(strict=True, ge=0)
     category_accuracy: float | None = Field(default=None, ge=0, le=1)
     urgency_accuracy: float | None = Field(default=None, ge=0, le=1)
     department_accuracy: float | None = Field(default=None, ge=0, le=1)
@@ -243,6 +253,21 @@ class ProviderEvaluationSummary(MetricsContract):
     api_cost_currency: str | None = None
     reviewed_notices: int = Field(strict=True, ge=0)
     human_correction_rate: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def cases_and_quality_must_be_coherent(self):
+        if self.evaluated_cases + self.failed_cases != self.cases:
+            raise ValueError("Los casos evaluados y fallidos deben sumar el total.")
+        accuracies = (
+            self.category_accuracy,
+            self.urgency_accuracy,
+            self.department_accuracy,
+        )
+        if self.evaluated_cases == 0 and any(value is not None for value in accuracies):
+            raise ValueError("No puede existir exactitud sin casos evaluables.")
+        if self.evaluated_cases > 0 and any(value is None for value in accuracies):
+            raise ValueError("Todo conjunto evaluable debe incluir sus exactitudes.")
+        return self
 
 
 class EvaluationReport(MetricsContract):
