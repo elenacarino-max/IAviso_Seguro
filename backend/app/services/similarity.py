@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import math
-import unicodedata
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -15,6 +14,8 @@ from backend.app.schemas.similarity import (
     SimilarityResult,
     StoredNoticeEmbedding,
 )
+
+from .location_normalization import normalize_location
 
 _logger = logging.getLogger("iaviso.similarity")
 
@@ -99,7 +100,7 @@ class SimilarityService:
         location: str | None,
         historical: tuple[StoredNoticeEmbedding, ...],
     ) -> tuple[SimilarityMatch, ...]:
-        normalized_location = self._normalize_location(location)
+        normalized_location = normalize_location(location)
         scored: list[SimilarityMatch] = []
         for candidate in historical:
             if (
@@ -110,7 +111,7 @@ class SimilarityService:
             score = self.cosine_similarity(embedding.vector, candidate.vector)
             if score < self._threshold:
                 continue
-            candidate_location = self._normalize_location(candidate.location)
+            candidate_location = normalize_location(candidate.location)
             scored.append(
                 SimilarityMatch(
                     notice_id=candidate.notice_id,
@@ -147,13 +148,6 @@ class SimilarityService:
         if math.isclose(raw_score, 1.0, rel_tol=1e-12, abs_tol=1e-12):
             return 1.0
         return min(1.0, max(0.0, raw_score))
-
-    @staticmethod
-    def _normalize_location(location: str | None) -> str | None:
-        if location is None:
-            return None
-        normalized = unicodedata.normalize("NFKC", " ".join(location.split()))
-        return normalized.casefold() or None
 
     def _log_unavailable(self, request_id: str, exc: Exception) -> None:
         _logger.warning(

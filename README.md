@@ -198,7 +198,6 @@ Invoke-RestMethod http://127.0.0.1:8000/api/v1/catalogs
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/risk-matrix
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/knowledge-base
 Invoke-RestMethod http://127.0.0.1:8000/api/v1/metrics/summary
-$precheck = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage/precheck -ContentType 'application/json' -Body '{"text":"Hay humo en un cuadro eléctrico.","provider":"local"}'
 $proposal = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/triage -ContentType 'application/json' -Body '{"text":"Hay agua en el pasillo.","provider":"local"}'
 Invoke-RestMethod 'http://127.0.0.1:8000/api/v1/notices?status=pending_review&urgency=alta&provider=local&page=1&limit=20'
 Invoke-RestMethod "http://127.0.0.1:8000/api/v1/notices/$($proposal.notice_id)/audit-events"
@@ -271,42 +270,6 @@ defecto). Una dependencia ausente se comunica dentro del cuerpo sin convertir
 la disponibilidad básica de la API en un error HTTP.
 
 ## Prompts, herramienta y seguridad
-
-### Comprobación previa de suficiencia
-
-La SPA llama primero a `POST /api/v1/triage/precheck`. Este endpoint valora
-únicamente si el texto identifica un peligro observable suficiente para generar
-una propuesta revisable. Usa el mismo proveedor elegido por el usuario, pero un
-contrato y prompt independientes: no clasifica, no asigna urgencia o departamento
-y no consulta matriz, RAG ni embeddings.
-
-`PrivacyService` se ejecuta antes del precheck. El proveedor recibe solo el texto
-anonimizado y el endpoint no persiste el aviso, la respuesta del proveedor ni
-ninguna ejecución. Si falta información devuelve entre una y tres preguntas
-breves; el usuario amplía el mismo textarea y vuelve a comprobarlo. Es una
-validación puntual, no un chatbot ni una conversación.
-
-```json
-{
-  "available": true,
-  "sufficient": false,
-  "questions": ["¿Qué peligro concreto has observado?"],
-  "missing_aspects": ["hazard"],
-  "privacy": {
-    "redacted": false,
-    "redaction_count": 0,
-    "redaction_types": []
-  }
-}
-```
-
-Un texto corto no se rechaza por longitud: «Fuego en el cuadro eléctrico» puede
-ser suficiente. No se exige ubicación ni información personal. Las instrucciones
-ignoran atributos demográficos y el contrato rechaza preguntas que soliciten
-datos sensibles. Si el proveedor falla o devuelve JSON inválido, la respuesta
-marca `available=false` y `sufficient=null`; la interfaz lo comunica y permite
-que la persona decida continuar con el triaje existente. Nunca se presenta el
-fallo como una validación satisfactoria.
 
 Antes de que `POST /api/v1/triage` o `POST /api/v1/comparisons` invoquen el
 servicio de triaje, un filtro local y determinista anonimiza el texto del aviso
@@ -411,10 +374,32 @@ Los tres campos se guardan con la ejecución. `GET /api/v1/notices` admite
 reciente. Las filas creadas antes de esta política conservan valores nulos: no se
 recalculan con reglas nuevas sin versionado.
 
-La política `v1` no usa `precheck_unavailable`: el contrato backward-compatible
-de `/triage` no conserva si la persona pulsó «Continuar sin comprobación». Ese
-estado podrá incorporarse en una versión futura si pasa a formar parte del flujo
-operativo persistido.
+## Panorama preventivo por zonas
+
+`GET /api/v1/metrics/preventive?window_days=30` agrega avisos históricos sin
+LLM ni base analítica adicional. Admite exclusivamente `7`, `30`, `90` y `all`.
+Las ventanas se aplican sobre la fecha de alta del aviso en UTC; la serie se
+agrupa por día para 7/30 días, por semana para 90 días y por mes para todo el
+histórico.
+
+La fuente de verdad es humana: una aprobación utiliza su clasificación final
+confirmada y una modificación utiliza categoría, urgencia y departamento
+corregidos. Los rechazados se cuentan aparte y no alimentan rankings. Las
+propuestas pendientes aparecen únicamente como carga operativa, desglosadas por
+`review_priority`, y nunca se mezclan con categorías o urgencias confirmadas.
+
+Las zonas se normalizan con Unicode NFKC, compactación de espacios y
+mayúsculas/minúsculas. No existe fuzzy matching: `Almacén` y ` ALMACÉN ` se
+agrupan, pero `Almacén norte` y `Almacén` continúan separados. Los avisos sin
+ubicación forman el grupo explícito «Sin ubicación». No hay coordenadas,
+geocodificación ni mapa físico.
+
+Un **foco preventivo** es una combinación exacta zona + categoría con al menos
+dos avisos confirmados. Describe concentración observada, no causalidad,
+peligrosidad estadística ni predicción. Con menos de tres avisos confirmados la
+interfaz advierte que no existen datos suficientes para identificar tendencias.
+No se realiza forecasting y los datos sintéticos de demostración no representan
+una empresa real.
 
 La matriz está en `config/risk_matrix.v1.json`, contiene una regla para cada una de las nueve categorías y se valida al consultarla. Su prioridad y departamento son recomendaciones didácticas para generar una propuesta revisable: no son normativa, no sustituyen la evaluación profesional y no deben interpretarse como una decisión operativa.
 
@@ -440,8 +425,8 @@ herramienta, matriz, persistencia o transición mantienen un cuerpo estable:
 El triaje sigue este flujo acotado:
 
 ```text
-aviso → anonimización → precheck → [aclaración si falta información] → triaje
-      → matriz PRL → recuperación documental → LLM → contrato Pydantic
+aviso → anonimización → triaje → matriz PRL → recuperación documental
+      → LLM → contrato Pydantic
       → embedding → similitud → incertidumbre → prioridad de revisión
       → persistencia → revisión humana
 ```

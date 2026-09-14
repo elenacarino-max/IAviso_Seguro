@@ -15,7 +15,6 @@ las fuentes y persiste los resultados.
     FastAPI
        ├── Pydantic y catálogos cerrados
        ├── Privacidad determinista
-       ├── Precheck de suficiencia
        ├── Servicio de triaje
        │    ├── Ollama local
        │    ├── Gemini externo
@@ -50,12 +49,6 @@ las fuentes y persiste los resultados.
     React -> FastAPI: texto, ubicación, proveedor
     FastAPI -> Pydantic: validar entrada
     FastAPI -> Privacidad: sustituir PII en texto y ubicación libre
-    FastAPI -> Proveedor seleccionado: comprobar suficiencia del texto limpio
-    Proveedor -> FastAPI: suficiente o hasta tres preguntas
-    FastAPI -> React: si falta información, detener sin persistir
-    React -> FastAPI: volver a comprobar el mismo texto ampliado
-    React -> FastAPI: iniciar el triaje con el texto ya suficiente
-    FastAPI -> Privacidad: anonimizar de nuevo la petición de triaje
     FastAPI -> Proveedor: solicitar clasificación con campos anonimizados
     Proveedor -> FastAPI: llamada consultar_matriz_riesgos
     FastAPI -> Matriz: validar categoría y recuperar regla
@@ -83,19 +76,6 @@ métricas y repositorio solo reciben los campos libres anonimizados. El servicio
 usa patrones locales y checksum para correo, teléfono español, DNI/NIE e IBAN. Su
 resultado no conserva coincidencias: solo texto limpio, indicador, recuento y
 tipos detectados. Los nombres propios quedan fuera del MVP.
-
-El precheck usa `InputAssessmentService`, el protocolo
-`InputAssessmentProvider` y adaptadores específicos para Ollama y Gemini. No
-reutiliza artificialmente `TriageService`: por ello no puede ejecutar llamadas
-de herramienta, matriz, recuperación documental, reparaciones de triaje,
-métricas o embeddings. `POST /api/v1/triage/precheck` no recibe un repositorio y
-no crea `notice`, `triage_run` ni `audit_event`.
-
-Su contrato cerrado admite solo `hazard`, `exposure`, `immediacy` y `context`
-como aspectos ausentes. Un resultado suficiente exige listas vacías; uno
-insuficiente exige entre una y tres preguntas seguras. Un error técnico se
-representa con `available=false` y `sufficient=null`, se registra sin texto ni
-respuesta del proveedor y deja la decisión de continuar a la persona usuaria.
 
 `SimilarityService` se inyecta por separado y solo se ejecuta en el endpoint de
 triaje una vez validada la propuesta. Recibe exclusivamente el texto y ubicación
@@ -135,15 +115,37 @@ Los de prioridad son la urgencia base (`low_urgency`, `medium_urgency`,
 `high_urgency`, `critical_urgency`) y, cuando proceda, `high_uncertainty`,
 `recurrent_risk` o `recurrent_same_location`.
 
-El estado técnico del precheck no se transmite a `/triage` en el contrato actual;
-por eso `v1` no inventa ni persiste `precheck_unavailable`.
+## Análisis preventivo histórico
+
+`PreventiveAnalyticsService` recibe `NoticeRecord` desde el repositorio SQLite y
+devuelve agregados Pydantic ya preparados; React no reconstruye estadísticas.
+No llama a proveedores, embeddings o RAG y no introduce otra base. El endpoint
+es `GET /api/v1/metrics/preventive`, con `window_days=7|30|90|all`.
+
+Para evitar duplicidades se cuenta cada aviso una vez y se toma su ejecución más
+reciente. `approved` y `modified` utilizan exclusivamente
+`review.final_classification`; `rejected` y `pending_review` permanecen en
+contadores separados. La prioridad persistida solo desglosa la cola pendiente y
+no sustituye a la urgencia preventiva.
+
+La clave de zona se comparte con `SimilarityService`: Unicode NFKC, espacios
+compactados y `casefold`. No elimina palabras, no hace fuzzy matching y no crea
+coordenadas. La etiqueta nula es «Sin ubicación». Los rankings se ordenan por
+recuento descendente y clave estable; los focos requieren dos confirmaciones de
+la misma zona + categoría. La suficiencia descriptiva exige tres confirmados,
+sin denominarse significancia estadística.
+
+Las ventanas usan la fecha UTC de creación del aviso. La serie es diaria en 7 y
+30 días, semanal en 90 y mensual en el histórico completo. Solo describe datos
+observados: no genera tendencias causales, predicciones ni forecasting. Los
+datos sintéticos del repositorio son exclusivamente de demo.
 
 ## Relaciones con servicios externos
 
 | Servicio | Dirección | Datos intercambiados | Credencial | Comportamiento si falta |
 | --- | --- | --- | --- | --- |
-| Ollama | FastAPI hacia servidor local | Precheck y triaje sobre texto anonimizado; evidencia; opcionalmente embedding local | No | El precheck queda no disponible; triaje devuelve un error controlado; similitud falla abierta. |
-| Gemini | FastAPI hacia API REST de Google | Precheck y triaje sobre texto anonimizado; evidencia y uso de tokens | Clave solo en backend | El precheck queda no disponible y el triaje devuelve 503. |
+| Ollama | FastAPI hacia servidor local | Triaje sobre texto anonimizado; evidencia; opcionalmente embedding local | No | El triaje devuelve un error controlado; similitud falla abierta. |
+| Gemini | FastAPI hacia API REST de Google | Triaje sobre texto anonimizado; evidencia y uso de tokens | Clave solo en backend | El triaje devuelve 503. |
 | SQLite | FastAPI hacia archivo local | Avisos anonimizados, propuestas, política versionada, revisiones, auditoría, comparaciones y métricas | No | La salud lo comunica y la escritura falla de forma controlada. |
 | GitHub Actions | GitHub hacia el repositorio | Código y pruebas; no avisos de usuario | No para la CI actual | Backend y frontend se validan con mocks. |
 

@@ -24,6 +24,10 @@ exclusivamente observaciones revisadas.
 `v1` después de similitud y antes de persistencia. No usan prompts ni modelos y
 devuelven exclusivamente niveles y reason codes cerrados.
 
+`PreventiveAnalyticsService` agrega el histórico recuperado de SQLite. Usa la
+clasificación final humana, ventanas cerradas y la normalización de ubicación
+compartida con similitud; no realiza predicción ni llama a un LLM.
+
 Tras un triaje válido, la API delega la creación de la propuesta y las
 transiciones humanas al repositorio transaccional. La propuesta original nunca
 se reemplaza por la clasificación revisada.

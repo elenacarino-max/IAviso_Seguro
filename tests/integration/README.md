@@ -1,6 +1,6 @@
 # integration
 
-Se prueban `GET /health`, `POST /api/v1/triage/precheck`, `POST /api/v1/triage`, `POST /api/v1/comparisons`,
+Se prueban `GET /health`, `POST /api/v1/triage`, `POST /api/v1/comparisons`,
 `GET /api/v1/notices` con búsqueda, filtros tipados, prioridad, orden y paginación,
 `GET /api/v1/notices/{notice_id}/audit-events`, revisión
 humana, validación 422, `request_id`, conflictos 409, errores controlados

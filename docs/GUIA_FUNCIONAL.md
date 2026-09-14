@@ -28,11 +28,6 @@ protocolo de emergencias.
         ↓
     Anonimización local
         ↓
-    Comprobación de suficiencia
-        ├─ insuficiente → preguntas → ampliar el mismo aviso
-        │                              └→ volver a comprobar
-        └─ suficiente
-              ↓
     Triaje + matriz PRL + recuperación documental
         ↓
     Propuesta pendiente
@@ -51,25 +46,21 @@ protocolo de emergencias.
    local o Gemini externo.
 2. El backend valida la entrada y sustituye PII conocida por marcadores sin
    conservar sus valores.
-3. El proveedor elegido comprueba si se describe un peligro concreto. Si falta
-   información, devuelve como máximo tres preguntas y el flujo se detiene sin
-   guardar nada.
-4. La persona amplía el mismo texto y vuelve a comprobarlo; no se crea un chat.
-5. Cuando el aviso es suficiente, el backend solicita una propuesta usando solo
-   los campos anonimizados.
-6. El modelo debe consultar la matriz de riesgos.
-7. Tras validar la categoría, el backend recupera documentación preventiva
+3. El backend solicita directamente una propuesta usando solo los campos
+   anonimizados; un aviso breve puede continuar si cumple el contrato básico.
+4. El modelo debe consultar la matriz de riesgos.
+5. Tras validar la categoría, el backend recupera documentación preventiva
    relacionada y conserva las fuentes realmente utilizadas.
-8. Pydantic comprueba el contrato de salida, incluido el resumen de exactamente
+6. Pydantic comprueba el contrato de salida, incluido el resumen de exactamente
    diez palabras.
-9. Si la función está activada, Ollama representa el texto anonimizado como un
+7. Si la función está activada, Ollama representa el texto anonimizado como un
    vector y el backend busca avisos históricos semánticamente próximos.
-10. El backend calcula la incertidumbre técnica y la prioridad de revisión con
+8. El backend calcula la incertidumbre técnica y la prioridad de revisión con
    reglas deterministas.
-11. La propuesta, el aviso anonimizado y, si existe, su embedding se guardan en
+9. La propuesta, el aviso anonimizado y, si existe, su embedding se guardan en
    SQLite con la política aplicada.
-12. Una persona técnica la aprueba, modifica o rechaza.
-13. La decisión queda disponible en el Registro con su auditoría y destino final.
+10. Una persona técnica la aprueba, modifica o rechaza.
+11. La decisión queda disponible en el Registro con su auditoría y destino final.
 
 ## Pantallas
 
@@ -78,12 +69,9 @@ protocolo de emergencias.
 Captura texto, ubicación opcional y motor. Ollama indica que los datos
 permanecen en local; Gemini informa de que la petición se envía al proveedor.
 El botón principal solo se activa cuando existe texto válido.
-Al pulsarlo, la aplicación ejecuta primero el precheck. Si el texto es claramente
-insuficiente muestra «Necesitamos un poco más de información» y hasta tres
-preguntas. No crea una propuesta todavía: la persona edita el mismo textarea y
-vuelve a intentarlo. Un texto corto pero concreto puede pasar directamente.
-Ante un fallo técnico se muestra un estado diferenciado y una acción explícita
-para continuar sin afirmar que el texto haya sido validado.
+Al pulsarlo, la aplicación envía directamente el aviso al triaje. No existe una
+conversación ni un paso de preguntas aclaratorias; un texto breve puede generar
+una propuesta porque la decisión final continúa siendo humana.
 Si el backend anonimiza el texto o la ubicación, la pantalla comunica el número
 y los tipos de datos sustituidos, pero nunca muestra sus valores.
 Cuando existen coincidencias semánticas, aparece un bloque discreto con los
@@ -131,6 +119,23 @@ estadísticas.
 
 Acuerdo con técnico significa aprobación sin cambios en un aviso o coincidencia
 completa de categoría, urgencia y departamento en una comparación revisada.
+
+Debajo del rendimiento de IA aparece un bloque visualmente separado,
+**Panorama preventivo**. Su selector consulta ventanas cerradas de 7, 30 y 90
+días o todo el histórico. Muestra la zona y el riesgo más frecuentes, pendientes
+de prioridad alta/crítica, rankings, focos preventivos y evolución temporal con
+barras CSS.
+
+Solo las clasificaciones finales aprobadas o corregidas por una persona alimentan
+los rankings PRL. Las propuestas pendientes se presentan como carga de revisión
+y los rechazos como trazabilidad, ambos separados. Un foco exige dos avisos
+confirmados en la misma combinación exacta zona + categoría. Con menos de tres
+confirmados se muestra «Datos insuficientes para identificar una tendencia».
+
+La ubicación es texto libre normalizado con Unicode NFKC, espacios y caja. No se
+aplica fuzzy matching, geocodificación ni un mapa físico. «Almacén norte» no se
+fusiona con «Almacén» y la ausencia se muestra como «Sin ubicación». La serie
+describe el histórico observado: no hace forecasting ni afirma causalidad.
 
 ### Matriz
 

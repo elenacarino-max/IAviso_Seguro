@@ -24,6 +24,9 @@ computacional son conceptos separados.
 `review_policy.py` cierra los niveles y reason codes de incertidumbre y prioridad
 de revisión. Ninguno representa una probabilidad ni razonamiento libre del LLM.
 
+`preventive_analytics.py` cierra las ventanas, agregados de zona/categoría,
+pendientes, focos y puntos temporales que consume el Panel.
+
 Estos contratos validan la estructura, no la corrección profesional de una
 propuesta. Una revisión humana tampoco representa la resolución operativa del
 riesgo.

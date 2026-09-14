@@ -3,12 +3,6 @@
 from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
 from .errors import ErrorCode, ErrorDetail, ErrorResponse
 from .health import HealthResponse, ServiceHealth, ServiceId, ServiceStatus
-from .input_assessment import (
-    InputAssessmentDecision,
-    InputAssessmentRequest,
-    InputAssessmentResponse,
-    MissingAspect,
-)
 from .knowledge import (
     KnowledgeBase,
     KnowledgeBaseSummary,
@@ -34,6 +28,20 @@ from .metrics import (
     ProviderEvaluationSummary,
 )
 from .privacy import PrivacyMetadata, PrivacyResult, RedactionType
+from .preventive_analytics import (
+    CategoryAggregate,
+    LocationAggregate,
+    PendingPriorityAggregate,
+    PendingPrioritySummary,
+    PreventiveAnalyticsResponse,
+    PreventiveHotspot,
+    PreventivePeriod,
+    PreventiveTimelinePoint,
+    PreventiveTotals,
+    PreventiveWindow,
+    TimelineGranularity,
+    UrgencyAggregate,
+)
 from .review_policy import (
     NoticeOrder,
     ReviewPolicyVersion,
@@ -74,6 +82,7 @@ from .workflow import (
 __all__ = [
     "AuditEventRecord",
     "CatalogsResponse",
+    "CategoryAggregate",
     "Category",
     "ClassificationDecision",
     "ComparisonProviderResult",
@@ -91,22 +100,27 @@ __all__ = [
     "EvaluationReport",
     "ExecutionMetrics",
     "HealthResponse",
-    "InputAssessmentDecision",
-    "InputAssessmentRequest",
-    "InputAssessmentResponse",
     "KnowledgeBase",
     "KnowledgeBaseSummary",
     "KnowledgeDocument",
     "KnowledgeEvidence",
     "KnowledgeSourceSummary",
+    "LocationAggregate",
     "NoticeRecord",
     "NoticeEmbedding",
     "NoticePage",
     "NoticeOrder",
     "MetricsSummary",
-    "MissingAspect",
     "ProposalStatus",
     "PricingReference",
+    "PendingPriorityAggregate",
+    "PendingPrioritySummary",
+    "PreventiveAnalyticsResponse",
+    "PreventiveHotspot",
+    "PreventivePeriod",
+    "PreventiveTimelinePoint",
+    "PreventiveTotals",
+    "PreventiveWindow",
     "PrivacyMetadata",
     "PrivacyResult",
     "Provider",
@@ -135,7 +149,9 @@ __all__ = [
     "TriageRequest",
     "TriageResult",
     "TriageRunRecord",
+    "TimelineGranularity",
     "Urgency",
+    "UrgencyAggregate",
     "UncertaintyAssessment",
     "UncertaintyLevel",
     "UncertaintyLevelSummary",

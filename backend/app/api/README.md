@@ -30,6 +30,9 @@ Rutas HTTP:
 - `GET /api/v1/metrics/summary`: agrega avisos y comparaciones persistidas por proveedor
   y devuelve flujo de revisión, latencia, intentos, reparaciones, validez JSON,
   tokens, coste, parámetros, incertidumbre y acuerdo con la decisión humana.
+- `GET /api/v1/metrics/preventive`: agrega por una ventana cerrada los avisos
+  confirmados por zona, categoría y urgencia; mantiene pendientes y rechazados
+  fuera de esas estadísticas.
 - `POST /api/v1/evaluations`: ejecuta los 14 casos sintéticos etiquetados con
   ambos proveedores y devuelve exactitud por campo, validez JSON, latencia y
   coste medios sin crear avisos.

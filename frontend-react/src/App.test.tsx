@@ -53,17 +53,9 @@ const catalogs = {
   departments: ["prevencion", "mantenimiento", "seguridad", "limpieza"],
 };
 
-const sufficientPrecheck = {
-  available: true,
-  sufficient: true,
-  questions: [],
-  missing_aspects: [],
-  privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
-};
-
 const basicTriageResponse = {
-  notice_id: "n-prechecked",
-  triage_run_id: "r-prechecked",
+  notice_id: "n-direct",
+  triage_run_id: "r-direct",
   status: "pending_review",
   version: 0,
   provider: "local",
@@ -80,6 +72,75 @@ const basicTriageResponse = {
   uncertainty: { level: "medium", reasons: ["provider_output_repaired"] },
   review_priority: { level: "high", reasons: ["high_urgency"] },
   review_policy_version: "v1",
+};
+
+const preventiveAnalytics = {
+  period: { window: "30", start_at: "2026-08-15T12:00:00Z", end_at: "2026-09-14T12:00:00Z", granularity: "day" },
+  totals: { confirmed_notices: 5, pending_notices: 4, rejected_notices: 1 },
+  pending_by_priority: {
+    levels: [
+      { level: "low", total: 0 },
+      { level: "medium", total: 1 },
+      { level: "high", total: 2 },
+      { level: "critical", total: 1 },
+    ],
+    policy_unavailable: 0,
+  },
+  by_location: [
+    { location: "Almacén", total: 3, high_or_critical_urgency: 2 },
+    { location: "Taller", total: 2, high_or_critical_urgency: 0 },
+  ],
+  by_category: [
+    { category: "caidas_obstaculos", total: 3 },
+    { category: "maquinaria", total: 2 },
+  ],
+  by_urgency: [{ urgency: "alta", total: 2 }, { urgency: "media", total: 3 }],
+  location_category_hotspots: [
+    { location: "Almacén", category: "caidas_obstaculos", total: 3, high_or_critical_urgency: 2 },
+  ],
+  timeline: [
+    { period: "2026-09-12", total_notices: 3, confirmed_notices: 2, pending_notices: 1, rejected_notices: 0 },
+    { period: "2026-09-13", total_notices: 2, confirmed_notices: 1, pending_notices: 0, rejected_notices: 1 },
+  ],
+  hotspot_minimum: 2,
+  enough_data_for_trends: true,
+};
+
+const emptyPreventiveAnalytics = {
+  ...preventiveAnalytics,
+  totals: { confirmed_notices: 0, pending_notices: 0, rejected_notices: 0 },
+  pending_by_priority: {
+    levels: [
+      { level: "low", total: 0 },
+      { level: "medium", total: 0 },
+      { level: "high", total: 0 },
+      { level: "critical", total: 0 },
+    ],
+    policy_unavailable: 0,
+  },
+  by_location: [],
+  by_category: [],
+  by_urgency: [],
+  location_category_hotspots: [],
+  timeline: [],
+  enough_data_for_trends: false,
+};
+
+const emptyProviderMetrics = { models: [], runs: 0, reviewed_runs: 0, mean_latency_ms: null, mean_provider_attempts: null, repair_rate: null, mean_repair_attempts: null, success_rate: null, json_valid_rate: null, json_valid_observations: 0, human_agreement_rate: null, mean_total_tokens: null, token_observations: 0, mean_api_cost: null, api_cost_currency: null, cost_observations: 0, temperatures: [], top_p_values: [] };
+const emptyMetricsSummary = {
+  total_notices: 0, total_runs: 0, pending_review: 0, reviewed: 0,
+  approved: 0, modified: 0, rejected: 0, acceptance_rate: null,
+  correction_rate: null, rejection_rate: null, review_policy_observations: 0,
+  pending_high_priority: 0, pending_critical_priority: 0,
+  uncertainty: [
+    { level: "low", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+    { level: "medium", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+    { level: "high", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+  ],
+  providers: [
+    { ...emptyProviderMetrics, provider: "local" },
+    { ...emptyProviderMetrics, provider: "external" },
+  ],
 };
 
 afterEach(() => {
@@ -149,73 +210,12 @@ describe("IAviso Seguro", () => {
     expect(screen.getByRole("textbox", { name: "Caso sintético" })).toHaveAttribute("maxlength", "4000");
   });
 
-  it("pide aclaraciones, no crea propuesta y permite editar el mismo aviso", async () => {
+  it("envía un aviso breve directamente al triaje sin preguntas previas", async () => {
     const postCalls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
-      if (path === "/api/v1/triage/precheck" && init?.method === "POST") {
-        postCalls.push("precheck");
-        const body = JSON.parse(String(init.body));
-        if (body.text === "Hay un problema.") {
-          return new Response(JSON.stringify({
-            available: true,
-            sufficient: false,
-            questions: [
-              "¿Qué peligro concreto has observado?",
-              "¿Hay personas expuestas actualmente?",
-              "¿Existe alguna señal de peligro inmediato?",
-            ],
-            missing_aspects: ["hazard", "exposure", "immediacy"],
-            privacy: { redacted: false, redaction_count: 0, redaction_types: [] },
-          }), { status: 200 });
-        }
-        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
-      }
       if (path === "/api/v1/triage" && init?.method === "POST") {
-        postCalls.push("triage");
-        return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
-      }
-      return new Response(JSON.stringify([]), { status: 200 });
-    });
-    render(<App />);
-    const textarea = screen.getByRole("textbox", { name: "¿Qué has observado?" });
-
-    await userEvent.type(textarea, "Hay un problema.");
-    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
-
-    const clarification = await screen.findByLabelText("Información insuficiente");
-    expect(within(clarification).getAllByRole("listitem")).toHaveLength(3);
-    expect(within(clarification).getByText(/Amplía la descripción/i)).toBeInTheDocument();
-    expect(screen.queryByText("Propuesta creada")).not.toBeInTheDocument();
-    expect(postCalls).toEqual(["precheck"]);
-
-    await userEvent.clear(textarea);
-    await userEvent.type(textarea, "Hay humo saliendo del cuadro eléctrico.");
-    await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
-
-    expect(await screen.findByText("Propuesta creada")).toBeInTheDocument();
-    expect(postCalls).toEqual(["precheck", "precheck", "triage"]);
-  });
-
-  it("muestra el fallo técnico y permite continuar de forma explícita", async () => {
-    let triageCalls = 0;
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      const path = String(input);
-      if (path === "/api/v1/triage/precheck" && init?.method === "POST") {
-        return new Response(JSON.stringify({
-          available: false,
-          sufficient: null,
-          questions: [],
-          missing_aspects: [],
-          privacy: {
-            redacted: true,
-            redaction_count: 1,
-            redaction_types: ["EMAIL"],
-          },
-        }), { status: 200 });
-      }
-      if (path === "/api/v1/triage" && init?.method === "POST") {
-        triageCalls += 1;
+        postCalls.push(path);
         return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
       }
       return new Response(JSON.stringify([]), { status: 200 });
@@ -224,27 +224,17 @@ describe("IAviso Seguro", () => {
 
     await userEvent.type(
       screen.getByRole("textbox", { name: "¿Qué has observado?" }),
-      "Hay un problema comunicado por juan@email.com.",
+      "Fuego en cuadro eléctrico.",
     );
     await userEvent.click(screen.getByRole("button", { name: /Generar propuesta/ }));
 
-    const unavailable = await screen.findByLabelText("Precheck no disponible");
-    expect(within(unavailable).getByText(/No se ha afirmado que el aviso sea suficiente/i)).toBeInTheDocument();
-    expect(within(unavailable).getByText(/Se anonimizó 1 dato personal/i)).toBeInTheDocument();
-    expect(triageCalls).toBe(0);
-
-    await userEvent.click(
-      within(unavailable).getByRole("button", { name: "Continuar sin comprobación" }),
-    );
     expect(await screen.findByText("Propuesta creada")).toBeInTheDocument();
-    expect(triageCalls).toBe(1);
+    expect(postCalls).toEqual(["/api/v1/triage"]);
+    expect(screen.queryByText(/Necesitamos un poco más de información/i)).not.toBeInTheDocument();
   });
 
   it("separa prioridad de revisión e incertidumbre sin mostrar confianza", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
-        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
-      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify(basicTriageResponse), { status: 200 });
       }
@@ -265,9 +255,6 @@ describe("IAviso Seguro", () => {
 
   it("informa de forma discreta cuando el backend anonimiza el aviso", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
-        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
-      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-private",
@@ -315,9 +302,6 @@ describe("IAviso Seguro", () => {
 
   it("muestra coincidencias como similitud semántica y no como confianza", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
-        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
-      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-current",
@@ -373,9 +357,6 @@ describe("IAviso Seguro", () => {
 
   it("no ocupa espacio cuando la similitud está disponible pero no hay coincidencias", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-      if (String(input) === "/api/v1/triage/precheck" && init?.method === "POST") {
-        return new Response(JSON.stringify(sufficientPrecheck), { status: 200 });
-      }
       if (String(input) === "/api/v1/triage" && init?.method === "POST") {
         return new Response(JSON.stringify({
           notice_id: "n-without-matches",
@@ -589,6 +570,9 @@ describe("IAviso Seguro", () => {
           ],
         }), { status: 200 });
       }
+      if (String(input) === "/api/v1/metrics/preventive?window_days=30") {
+        return new Response(JSON.stringify(preventiveAnalytics), { status: 200 });
+      }
       if (String(input) === "/api/v1/catalogs") return new Response(JSON.stringify(catalogs), { status: 200 });
       if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
       return new Response(JSON.stringify([]), { status: 200 });
@@ -608,6 +592,12 @@ describe("IAviso Seguro", () => {
     expect(screen.getByRole("heading", { name: "Incertidumbre técnica y corrección" })).toBeInTheDocument();
     expect(screen.getByText("Incertidumbre Alta")).toBeInTheDocument();
     expect(screen.getAllByText("50%").length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByRole("heading", { name: "Panorama preventivo" })).toBeInTheDocument();
+    expect(screen.getByText("Zona con más avisos confirmados")).toBeInTheDocument();
+    expect(screen.getAllByText("Almacén").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Caídas y obstáculos").length).toBeGreaterThan(0);
+    expect(screen.getByText("Almacén · Caídas y obstáculos")).toBeInTheDocument();
+    expect(screen.getByText("4 pendientes totales")).toBeInTheDocument();
   });
 
   it("muestra N/A cuando no existen propuestas con política versionada", async () => {
@@ -631,12 +621,74 @@ describe("IAviso Seguro", () => {
           ],
         }), { status: 200 });
       }
+      if (String(input) === "/api/v1/metrics/preventive?window_days=30") {
+        return new Response(JSON.stringify(emptyPreventiveAnalytics), { status: 200 });
+      }
       return new Response(JSON.stringify([]), { status: 200 });
     });
     render(<App />);
     await userEvent.click(screen.getByRole("button", { name: /Panel/ }));
 
     expect(await screen.findByText(/N\/A · Aún no hay propuestas/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Datos insuficientes para identificar una tendencia/i)).toBeInTheDocument();
+    expect(screen.getByText("Sin avisos confirmados en este periodo.")).toBeInTheDocument();
+  });
+
+  it("cambia la ventana del panorama sin ocultar las métricas IA", async () => {
+    const requested: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url === "/api/v1/metrics/summary") {
+        const emptyProvider = { models: [], runs: 0, reviewed_runs: 0, mean_latency_ms: null, mean_provider_attempts: null, repair_rate: null, mean_repair_attempts: null, success_rate: null, json_valid_rate: null, json_valid_observations: 0, human_agreement_rate: null, mean_total_tokens: null, token_observations: 0, mean_api_cost: null, api_cost_currency: null, cost_observations: 0, temperatures: [], top_p_values: [] };
+        return new Response(JSON.stringify({
+          total_notices: 0, total_runs: 0, pending_review: 0, reviewed: 0,
+          approved: 0, modified: 0, rejected: 0, acceptance_rate: null,
+          correction_rate: null, rejection_rate: null, review_policy_observations: 0,
+          pending_high_priority: 0, pending_critical_priority: 0,
+          uncertainty: [
+            { level: "low", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+            { level: "medium", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+            { level: "high", runs: 0, rate: null, reviewed_runs: 0, human_correction_rate: null },
+          ],
+          providers: [{ ...emptyProvider, provider: "local" }, { ...emptyProvider, provider: "external" }],
+        }), { status: 200 });
+      }
+      if (url.startsWith("/api/v1/metrics/preventive")) {
+        const selected = url.endsWith("=7") ? "7" : "30";
+        return new Response(JSON.stringify({ ...preventiveAnalytics, period: { ...preventiveAnalytics.period, window: selected } }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Panel/ }));
+    await screen.findByRole("heading", { name: "Panorama preventivo" });
+    await userEvent.click(screen.getByRole("button", { name: "7 días" }));
+
+    expect(requested).toContain("/api/v1/metrics/preventive?window_days=7");
+    expect(screen.getByText("Incertidumbre técnica y corrección")).toBeInTheDocument();
+  });
+
+  it("mantiene el bloque IA cuando el panorama preventivo no está disponible", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input) === "/api/v1/metrics/summary") {
+        return new Response(JSON.stringify(emptyMetricsSummary), { status: 200 });
+      }
+      if (String(input).startsWith("/api/v1/metrics/preventive")) {
+        return new Response(
+          JSON.stringify({ error: { message: "Panorama preventivo no disponible." } }),
+          { status: 503 },
+        );
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Panel/ }));
+
+    expect(await screen.findByText("Panorama preventivo no disponible.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Incertidumbre técnica y corrección" })).toBeInTheDocument();
   });
 
   it("contrasta ambos modelos y registra la decisión humana", async () => {

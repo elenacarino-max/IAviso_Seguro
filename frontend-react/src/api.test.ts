@@ -181,6 +181,19 @@ describe("cliente de FastAPI", () => {
     );
   });
 
+  it("consulta el panorama preventivo con una ventana cerrada", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ totals: { confirmed_notices: 0 } }), { status: 200 }),
+    );
+
+    await api.getPreventiveAnalytics("90");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/metrics/preventive?window_days=90",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
   it("registra una referencia humana para una comparación", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify({ id: "review-1" }), { status: 200 }),

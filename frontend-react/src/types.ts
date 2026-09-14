@@ -140,16 +140,6 @@ export interface PrivacyMetadata {
   redaction_types: RedactionType[];
 }
 
-export type MissingAspect = "hazard" | "exposure" | "immediacy" | "context";
-
-export interface InputAssessmentResponse {
-  available: boolean;
-  sufficient: boolean | null;
-  questions: string[];
-  missing_aspects: MissingAspect[];
-  privacy: PrivacyMetadata;
-}
-
 export interface SimilarityMatch {
   notice_id: string;
   score: number;
@@ -353,6 +343,49 @@ export interface MetricsSummary {
   pending_critical_priority: number;
   uncertainty: UncertaintyLevelSummary[];
   providers: ProviderMetricsSummary[];
+}
+
+export type PreventiveWindow = "7" | "30" | "90" | "all";
+export type TimelineGranularity = "day" | "week" | "month";
+
+export interface PreventiveAnalytics {
+  period: {
+    window: PreventiveWindow;
+    start_at: string | null;
+    end_at: string;
+    granularity: TimelineGranularity;
+  };
+  totals: {
+    confirmed_notices: number;
+    pending_notices: number;
+    rejected_notices: number;
+  };
+  pending_by_priority: {
+    levels: Array<{ level: ReviewPriorityLevel; total: number }>;
+    policy_unavailable: number;
+  };
+  by_location: Array<{
+    location: string;
+    total: number;
+    high_or_critical_urgency: number;
+  }>;
+  by_category: Array<{ category: Category; total: number }>;
+  by_urgency: Array<{ urgency: Urgency; total: number }>;
+  location_category_hotspots: Array<{
+    location: string;
+    category: Category;
+    total: number;
+    high_or_critical_urgency: number;
+  }>;
+  timeline: Array<{
+    period: string;
+    total_notices: number;
+    confirmed_notices: number;
+    pending_notices: number;
+    rejected_notices: number;
+  }>;
+  hotspot_minimum: 2;
+  enough_data_for_trends: boolean;
 }
 
 export interface UncertaintyLevelSummary {

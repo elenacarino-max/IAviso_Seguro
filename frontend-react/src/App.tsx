@@ -36,13 +36,14 @@ import type {
   Department,
   EvaluationReport,
   HealthResponse,
-  InputAssessmentResponse,
   KnowledgeBaseSummary,
   KnowledgeEvidence,
   MetricsSummary,
   NoticeRecord,
   NoticePage,
   NoticeQuery,
+  PreventiveAnalytics,
+  PreventiveWindow,
   PrivacyMetadata,
   Provider,
   ProposalStatus,
@@ -266,45 +267,6 @@ function ReviewPolicySummary({
   );
 }
 
-function InputAssessmentNotice({
-  assessment,
-  loading,
-  onContinue,
-}: {
-  assessment: InputAssessmentResponse | null;
-  loading: boolean;
-  onContinue: () => void;
-}) {
-  if (!assessment || (assessment.available && assessment.sufficient)) return null;
-  if (!assessment.available) {
-    return (
-      <section className="precheck-notice unavailable" aria-label="Precheck no disponible">
-        <AlertTriangle size={18} aria-hidden="true" />
-        <div>
-          <strong>No se pudo completar la comprobación previa</strong>
-          <p>No se ha afirmado que el aviso sea suficiente. Puedes reintentarlo o continuar con el flujo habitual.</p>
-          <PrivacyNotice privacy={assessment.privacy} />
-          <button type="button" className="secondary-action" disabled={loading} onClick={onContinue}>
-            Continuar sin comprobación
-          </button>
-        </div>
-      </section>
-    );
-  }
-  return (
-    <section className="precheck-notice" aria-label="Información insuficiente">
-      <ClipboardCheck size={18} aria-hidden="true" />
-      <div>
-        <strong>Necesitamos un poco más de información</strong>
-        <p>Antes de analizar este aviso, concreta:</p>
-        <ul>{assessment.questions.slice(0, 3).map((question) => <li key={question}>{question}</li>)}</ul>
-        <small>Amplía la descripción en el mismo campo y vuelve a generar la propuesta.</small>
-        <PrivacyNotice privacy={assessment.privacy} />
-      </div>
-    </section>
-  );
-}
-
 function App() {
   const [view, setView] = useState<View>("new");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -434,10 +396,9 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
   const [text, setText] = useState("");
   const [location, setLocation] = useState("");
   const [provider, setProvider] = useState<Provider>("local");
-  const [loadingStage, setLoadingStage] = useState<"precheck" | "triage" | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<TriageProposalResponse | null>(null);
-  const [assessment, setAssessment] = useState<InputAssessmentResponse | null>(null);
 
   const input = (): CreateTriageInput => ({
     text: text.trim(),
@@ -445,41 +406,17 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
     location: location.trim() || null,
   });
 
-  const createProposal = async (payload: CreateTriageInput) => {
-    setLoadingStage("triage");
-    setResult(await api.createTriage(payload));
-  };
-
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoadingStage("precheck");
+    setLoading(true);
     setError(null);
     setResult(null);
-    setAssessment(null);
     try {
-      const payload = input();
-      const nextAssessment = await api.precheckTriage(payload);
-      setAssessment(nextAssessment);
-      if (nextAssessment.available && nextAssessment.sufficient) {
-        await createProposal(payload);
-      }
+      setResult(await api.createTriage(input()));
     } catch (caught) {
       setError(caught);
     } finally {
-      setLoadingStage(null);
-    }
-  };
-
-  const continueWithoutPrecheck = async () => {
-    setError(null);
-    setResult(null);
-    setAssessment(null);
-    try {
-      await createProposal(input());
-    } catch (caught) {
-      setError(caught);
-    } finally {
-      setLoadingStage(null);
+      setLoading(false);
     }
   };
 
@@ -527,18 +464,11 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
             ))}
           </fieldset>
 
-          <InputAssessmentNotice
-            assessment={assessment}
-            loading={loadingStage !== null}
-            onContinue={() => { void continueWithoutPrecheck(); }}
-          />
           <StatusMessage error={error} />
-          <button className="primary-action" disabled={loadingStage !== null || text.trim().length < 1}>
-            {loadingStage === "precheck"
-              ? <><LoaderCircle className="spin" /> Comprobando información…</>
-              : loadingStage === "triage"
-                ? <><LoaderCircle className="spin" /> Analizando aviso…</>
-                : <>Generar propuesta <ArrowRight /></>}
+          <button className="primary-action" disabled={loading || text.trim().length < 1}>
+            {loading
+              ? <><LoaderCircle className="spin" /> Analizando aviso…</>
+              : <>Generar propuesta <ArrowRight /></>}
           </button>
         </form>
 
@@ -551,8 +481,8 @@ function NewNotice({ riskMatrix, onCreated }: { riskMatrix: RiskMatrixDocument |
           <h2>Una señal entra. Una persona decide.</h2>
           <ol>
             <li><span>1</span><p><strong>Describe</strong> el peligro observado.</p></li>
-            <li><span>2</span><p><strong>Comprueba</strong> que existe información suficiente.</p></li>
-            <li><span>3</span><p><strong>La IA consulta</strong> la matriz de riesgo.</p></li>
+            <li><span>2</span><p><strong>Protegemos</strong> los datos personales detectables.</p></li>
+            <li><span>3</span><p><strong>La IA consulta</strong> matriz y evidencia preventiva.</p></li>
             <li><span>4</span><p><strong>Un técnico revisa</strong> antes de aceptar.</p></li>
           </ol>
           <div className="emergency-note"><AlertTriangle /><p><strong>¿Existe peligro inmediato?</strong> Sigue el protocolo de emergencias. Esta aplicación no lo sustituye.</p></div>
@@ -788,10 +718,24 @@ function Dashboard() {
   const [summary, setSummary] = useState<MetricsSummary | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [preventive, setPreventive] = useState<PreventiveAnalytics | null>(null);
+  const [preventiveWindow, setPreventiveWindow] = useState<PreventiveWindow>("30");
+  const [preventiveError, setPreventiveError] = useState<unknown>(null);
+  const [preventiveLoading, setPreventiveLoading] = useState(true);
 
   useEffect(() => {
     void api.getMetricsSummary().then(setSummary).catch(setError).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    setPreventiveLoading(true);
+    setPreventiveError(null);
+    setPreventive(null);
+    void api.getPreventiveAnalytics(preventiveWindow)
+      .then(setPreventive)
+      .catch(setPreventiveError)
+      .finally(() => setPreventiveLoading(false));
+  }, [preventiveWindow]);
 
   const cards = summary ? [
     ["Avisos procesados", summary.total_notices, Activity, "Entradas persistidas"],
@@ -802,7 +746,7 @@ function Dashboard() {
 
   return (
     <section className="page-content">
-      <PageIntro eyebrow="03 · Evaluación histórica" title="Qué modelo funciona mejor, medido con datos.">Rendimiento, estabilidad, coste y acuerdo con la revisión humana a partir de ejecuciones persistidas.</PageIntro>
+      <PageIntro eyebrow="03 · Evaluación histórica" title="Qué modelo funciona mejor, medido con datos.">Rendimiento del sistema IA y panorama preventivo PRL, separados y calculados a partir de datos persistidos.</PageIntro>
       <StatusMessage error={error} />
       {loading ? <Empty icon={<LoaderCircle className="spin" />} title="Calculando indicadores" text="Consultando métricas agregadas en la API…" /> : (
         summary && <>
@@ -846,6 +790,118 @@ function Dashboard() {
             ) : <p className="policy-dashboard-empty">N/A · Aún no hay propuestas guardadas con una política de revisión versionada.</p>}
           </section>
           <p className="dashboard-definition"><ShieldCheck /> “Acuerdo con técnico” exige una aprobación sin cambios o coincidencia en categoría, urgencia y departamento dentro de una comparación revisada. “Aprobadas sin cambios” no incluye propuestas corregidas. Las ejecuciones incluyen avisos y comparaciones; los indicadores superiores corresponden solo al flujo de avisos.</p>
+          <PreventivePanorama
+            data={preventive}
+            error={preventiveError}
+            loading={preventiveLoading}
+            window={preventiveWindow}
+            onWindowChange={setPreventiveWindow}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+const preventiveWindows = ["7", "30", "90", "all"] satisfies readonly PreventiveWindow[];
+const preventiveWindowLabels: Record<PreventiveWindow, string> = {
+  "7": "7 días",
+  "30": "30 días",
+  "90": "90 días",
+  all: "Todo",
+};
+
+function PreventivePanorama({
+  data,
+  error,
+  loading,
+  window,
+  onWindowChange,
+}: {
+  data: PreventiveAnalytics | null;
+  error: unknown;
+  loading: boolean;
+  window: PreventiveWindow;
+  onWindowChange: (value: PreventiveWindow) => void;
+}) {
+  const topLocation = data?.by_location[0];
+  const topCategory = data?.by_category[0];
+  const urgentPending = data?.pending_by_priority.levels
+    .filter((item) => item.level === "high" || item.level === "critical")
+    .reduce((total, item) => total + item.total, 0) ?? 0;
+  const maxLocation = Math.max(1, ...(data?.by_location.map((item) => item.total) ?? []));
+  const maxCategory = Math.max(1, ...(data?.by_category.map((item) => item.total) ?? []));
+  const maxTimeline = Math.max(1, ...(data?.timeline.map((item) => item.confirmed_notices) ?? []));
+
+  return (
+    <section className="preventive-panorama" aria-label="Panorama preventivo">
+      <header className="preventive-heading">
+        <div><span>Prevención basada en revisiones humanas</span><h2>Panorama preventivo</h2><p>Distribución histórica por zonas; no es un mapa geográfico ni una predicción.</p></div>
+        <div className="period-selector" aria-label="Periodo del panorama preventivo">
+          {preventiveWindows.map((value) => (
+            <button
+              className={window === value ? "active" : ""}
+              key={value}
+              onClick={() => onWindowChange(value)}
+              type="button"
+            >{preventiveWindowLabels[value]}</button>
+          ))}
+        </div>
+      </header>
+      <StatusMessage error={error} />
+      {loading ? <p className="preventive-state"><LoaderCircle className="spin" /> Calculando el panorama preventivo…</p> : data && (
+        <>
+          <div className="preventive-cards">
+            <article><MapPin /><span>Zona con más avisos confirmados</span><strong>{topLocation?.location ?? "—"}</strong><small>{topLocation ? `${topLocation.total} avisos` : "Sin datos confirmados"}</small></article>
+            <article><AlertTriangle /><span>Riesgo más frecuente</span><strong>{topCategory ? optionLabel(topCategory.category) : "—"}</strong><small>{topCategory ? `${topCategory.total} avisos` : "Sin datos confirmados"}</small></article>
+            <article><Clock3 /><span>Pendientes de prioridad alta/crítica</span><strong>{urgentPending}</strong><small>{data.totals.pending_notices} pendientes totales</small></article>
+          </div>
+
+          {!data.enough_data_for_trends && (
+            <p className="preventive-caution"><AlertTriangle /> Datos insuficientes para identificar una tendencia. Se muestran únicamente recuentos observados.</p>
+          )}
+
+          <div className="preventive-rankings">
+            <article className="work-card">
+              <header><span>Zonas con más avisos</span><small>Solo clasificaciones confirmadas</small></header>
+              {data.by_location.length ? <ol>{data.by_location.map((item) => <li key={item.location}>
+                <div><strong>{item.location}</strong><span>{item.total}</span></div>
+                <i><b style={{ width: `${(item.total / maxLocation) * 100}%` }} /></i>
+                <small>{item.high_or_critical_urgency} con urgencia alta o crítica</small>
+              </li>)}</ol> : <p>Sin avisos confirmados en este periodo.</p>}
+            </article>
+            <article className="work-card">
+              <header><span>Riesgos más frecuentes</span><small>Clasificación final humana</small></header>
+              {data.by_category.length ? <ol>{data.by_category.map((item) => <li key={item.category}>
+                <div><strong>{optionLabel(item.category)}</strong><span>{item.total}</span></div>
+                <i><b style={{ width: `${(item.total / maxCategory) * 100}%` }} /></i>
+              </li>)}</ol> : <p>Sin categorías confirmadas en este periodo.</p>}
+            </article>
+          </div>
+
+          <div className="preventive-detail-grid">
+            <article className="work-card preventive-hotspots">
+              <header><span>Focos preventivos</span><small>Mínimo {data.hotspot_minimum} avisos en una zona y categoría</small></header>
+              {data.location_category_hotspots.length ? data.location_category_hotspots.map((item) => <div key={`${item.location}:${item.category}`}>
+                <MapPin /><p><strong>{item.location} · {optionLabel(item.category)}</strong><span>{item.total} avisos confirmados</span><small>{item.high_or_critical_urgency} con urgencia alta o crítica</small></p>
+              </div>) : <p>No hay concentraciones que alcancen el mínimo en este periodo.</p>}
+            </article>
+            <article className="work-card preventive-pending">
+              <header><span>Carga pendiente</span><small>Prioridad de revisión, no urgencia confirmada</small></header>
+              <div>{data.pending_by_priority.levels.slice().reverse().map((item) => <span key={item.level}><span className={`priority-badge priority-${item.level}`}>{policyLevelLabels[item.level]}</span><b>{item.total}</b></span>)}</div>
+              {data.pending_by_priority.policy_unavailable > 0 && <small>{data.pending_by_priority.policy_unavailable} avisos históricos sin política versionada.</small>}
+              <p>{data.totals.rejected_notices} rechazados por revisión, excluidos de las estadísticas preventivas.</p>
+            </article>
+          </div>
+
+          <article className="work-card preventive-timeline">
+            <header><span>Evolución observada</span><small>{preventiveWindowLabels[data.period.window]} · agrupación por {data.period.granularity === "day" ? "día" : data.period.granularity === "week" ? "semana" : "mes"}</small></header>
+            {data.timeline.length ? <div className="timeline-bars">{data.timeline.map((item) => <div key={item.period} title={`${item.total_notices} avisos totales`}>
+              <span><i style={{ height: item.confirmed_notices === 0 ? "0" : `${Math.max(8, (item.confirmed_notices / maxTimeline) * 100)}%` }} /></span>
+              <b>{item.confirmed_notices}</b><small>{item.period}</small>
+            </div>)}</div> : <p>Sin actividad registrada en este periodo.</p>}
+            <footer>La serie representa avisos confirmados. Pendientes y rechazados se mantienen separados y no se convierten en hechos preventivos.</footer>
+          </article>
         </>
       )}
     </section>

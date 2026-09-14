@@ -4,9 +4,12 @@ from .errors import InvalidKnowledgeBaseError, InvalidProviderOutputError
 from .evaluation import EvaluationService, load_evaluation_dataset
 from .execution import ExecutionTelemetry, TriageExecution
 from .health import HealthService
-from .input_assessment import InputAssessmentService
 from .metrics import MetricsService, error_code_for
 from .metrics_summary import MetricsSummaryService
+from .preventive_analytics import (
+    HOTSPOT_MINIMUM,
+    PreventiveAnalyticsService,
+)
 from .privacy import PrivacyService
 from .retrieval import PreventionKnowledgeRetriever
 from .review_policy import (
@@ -23,10 +26,11 @@ __all__ = [
     "InvalidProviderOutputError",
     "InvalidKnowledgeBaseError",
     "HealthService",
-    "InputAssessmentService",
     "MetricsService",
     "MetricsSummaryService",
+    "HOTSPOT_MINIMUM",
     "PreventionKnowledgeRetriever",
+    "PreventiveAnalyticsService",
     "REVIEW_POLICY_VERSION",
     "ReviewPriorityService",
     "PrivacyService",

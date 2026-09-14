@@ -8,9 +8,10 @@ import type {
   ErrorCode,
   EvaluationReport,
   HealthResponse,
-  InputAssessmentResponse,
   KnowledgeBaseSummary,
   MetricsSummary,
+  PreventiveAnalytics,
+  PreventiveWindow,
   AuditEventRecord,
   NoticePage,
   NoticeQuery,
@@ -108,13 +109,6 @@ export const api = {
     return request<CatalogsResponse>("/api/v1/catalogs");
   },
 
-  async precheckTriage(input: CreateTriageInput): Promise<InputAssessmentResponse> {
-    return request<InputAssessmentResponse>("/api/v1/triage/precheck", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-  },
-
   async createTriage(input: CreateTriageInput): Promise<TriageProposalResponse> {
     return request<TriageProposalResponse>("/api/v1/triage", {
       method: "POST",
@@ -173,6 +167,12 @@ export const api = {
 
   async getMetricsSummary(): Promise<MetricsSummary> {
     return request<MetricsSummary>("/api/v1/metrics/summary");
+  },
+
+  async getPreventiveAnalytics(windowDays: PreventiveWindow = "30"): Promise<PreventiveAnalytics> {
+    return request<PreventiveAnalytics>(
+      `/api/v1/metrics/preventive?window_days=${encodeURIComponent(windowDays)}`,
+    );
   },
 
   async runEvaluation(): Promise<EvaluationReport> {
