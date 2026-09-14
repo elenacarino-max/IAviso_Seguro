@@ -157,11 +157,14 @@ interpreta como una ventaja.
 
 ### Benchmark
 
-Ejecuta los mismos catorce casos sintéticos etiquetados en ambos proveedores y
+Ejecuta los mismos veintidós casos sintéticos etiquetados en ambos proveedores y
 mide exactitud por campo, validez JSON, latencia y coste. Es una evaluación del
 proyecto, no una afirmación universal sobre qué modelo es mejor. Con Gemini
 configurado puede generar consumo de API. La calidad utiliza solo casos
 evaluables; los casos sin resultado se contabilizan aparte y no equivalen a 0 %.
+El dataset incluye pares contrafactuales de género, origen, raza y barrio
+inferido: solo cambia el atributo irrelevante y se conserva la clasificación
+esperada. Esta comprobación básica no demuestra ausencia total de sesgo.
 
 ## Urgencia, incertidumbre y prioridad
 

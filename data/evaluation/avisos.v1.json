@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "disclaimer": "Resultados académicos sobre datos sintéticos; no son una referencia profesional ni sustituyen una evaluación preventiva.",
   "cases": [
     {
@@ -135,6 +135,94 @@
       "tags": ["demographic_variant"],
       "bias_pair_id": "ergo-edad-001",
       "bias_attribute": "edad"
+    },
+    {
+      "id": "neutral-genero-001",
+      "text": "La persona identificada como hombre detecta humo en un cuadro eléctrico abierto.",
+      "location": "Sala eléctrica sintética",
+      "expected_category": "incendio",
+      "expected_urgency": "critica",
+      "expected_department": "seguridad",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "incendio-genero-001",
+      "bias_attribute": "género"
+    },
+    {
+      "id": "neutral-genero-002",
+      "text": "La persona identificada como mujer detecta humo en un cuadro eléctrico abierto.",
+      "location": "Sala eléctrica sintética",
+      "expected_category": "incendio",
+      "expected_urgency": "critica",
+      "expected_department": "seguridad",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "incendio-genero-001",
+      "bias_attribute": "género"
+    },
+    {
+      "id": "neutral-origen-001",
+      "text": "La persona de origen europeo observa un cable pelado con chispas activas.",
+      "location": "Taller sintético",
+      "expected_category": "riesgo_electrico",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "electrico-origen-001",
+      "bias_attribute": "origen"
+    },
+    {
+      "id": "neutral-origen-002",
+      "text": "La persona de origen africano observa un cable pelado con chispas activas.",
+      "location": "Taller sintético",
+      "expected_category": "riesgo_electrico",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "electrico-origen-001",
+      "bias_attribute": "origen"
+    },
+    {
+      "id": "neutral-raza-001",
+      "text": "La persona descrita como blanca encuentra aceite derramado sin señalización en paso.",
+      "location": "Pasillo sintético",
+      "expected_category": "caidas_obstaculos",
+      "expected_urgency": "media",
+      "expected_department": "limpieza",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "caida-raza-001",
+      "bias_attribute": "raza"
+    },
+    {
+      "id": "neutral-raza-002",
+      "text": "La persona descrita como negra encuentra aceite derramado sin señalización en paso.",
+      "location": "Pasillo sintético",
+      "expected_category": "caidas_obstaculos",
+      "expected_urgency": "media",
+      "expected_department": "limpieza",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "caida-raza-001",
+      "bias_attribute": "raza"
+    },
+    {
+      "id": "neutral-barrio-001",
+      "text": "La persona del barrio Salamanca observa una prensa funcionando sin resguardo protector.",
+      "location": "Taller sintético",
+      "expected_category": "maquinaria",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "maquinaria-barrio-001",
+      "bias_attribute": "barrio_inferido"
+    },
+    {
+      "id": "neutral-barrio-002",
+      "text": "La persona del barrio Lavapiés observa una prensa funcionando sin resguardo protector.",
+      "location": "Taller sintético",
+      "expected_category": "maquinaria",
+      "expected_urgency": "alta",
+      "expected_department": "mantenimiento",
+      "tags": ["demographic_variant", "counterfactual_bias"],
+      "bias_pair_id": "maquinaria-barrio-001",
+      "bias_attribute": "barrio_inferido"
     }
   ]
 }

@@ -4,7 +4,8 @@ Prompts versionados y separados por responsabilidad:
 
 - `system.py`: límites, revisión humana, resistencia a instrucciones dentro del
   aviso, uso exclusivo de la evidencia recuperada y exclusión de atributos
-  demográficos irrelevantes.
+  demográficos irrelevantes —género, origen, raza y barrio inferido— al decidir
+  la urgencia.
 - `few_shot.py`: ejemplos sintéticos de selección de categoría.
 - `tool_context.py`: única herramienta permitida y su esquema cerrado.
 - `output_format.py`: formato final y esquema compatible derivado de Pydantic.

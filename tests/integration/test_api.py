@@ -665,13 +665,13 @@ def test_evaluation_exposes_quality_latency_and_cost_without_creating_notices(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["dataset_version"] == "1.0.0"
+    assert body["dataset_version"] == "1.1.0"
     assert [item["provider"] for item in body["summaries"]] == [
         "local",
         "external",
     ]
-    assert all(item["cases"] == 14 for item in body["summaries"])
-    assert all(item["evaluated_cases"] == 14 for item in body["summaries"])
+    assert all(item["cases"] == 22 for item in body["summaries"])
+    assert all(item["evaluated_cases"] == 22 for item in body["summaries"])
     assert all(item["failed_cases"] == 0 for item in body["summaries"])
     assert all(item["category_accuracy"] is not None for item in body["summaries"])
     assert all(item["urgency_accuracy"] is not None for item in body["summaries"])

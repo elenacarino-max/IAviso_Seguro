@@ -185,7 +185,7 @@ describe("cliente de FastAPI", () => {
 
   it("ejecuta el benchmark cuantitativo mediante la API", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
-      new Response(JSON.stringify({ dataset_version: "1.0.0", summaries: [] }), { status: 200 }),
+      new Response(JSON.stringify({ dataset_version: "1.1.0", summaries: [] }), { status: 200 }),
     );
 
     await api.runEvaluation();

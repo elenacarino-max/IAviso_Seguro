@@ -630,14 +630,14 @@ describe("IAviso Seguro", () => {
       }
       if (String(input) === "/api/v1/evaluations" && init?.method === "POST") {
         return new Response(JSON.stringify({
-          dataset_version: "1.0.0",
+          dataset_version: "1.1.0",
           generated_at: "2026-09-12T10:00:00Z",
           disclaimer: "Resultados académicos sobre datos sintéticos.",
           summaries: [
             {
               provider: "local",
-              cases: 14,
-              evaluated_cases: 14,
+              cases: 22,
+              evaluated_cases: 22,
               failed_cases: 0,
               category_accuracy: 0.8,
               urgency_accuracy: 0.7,
@@ -651,8 +651,8 @@ describe("IAviso Seguro", () => {
             },
             {
               provider: "external",
-              cases: 14,
-              evaluated_cases: 14,
+              cases: 22,
+              evaluated_cases: 22,
               failed_cases: 0,
               category_accuracy: 0.9,
               urgency_accuracy: 0.8,
@@ -687,10 +687,10 @@ describe("IAviso Seguro", () => {
       if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
       if (String(input) === "/api/v1/evaluations" && init?.method === "POST") {
         return new Response(JSON.stringify({
-          dataset_version: "1.0.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.",
+          dataset_version: "1.1.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.",
           summaries: [
-            { provider: "local", cases: 14, evaluated_cases: 0, failed_cases: 14, category_accuracy: null, urgency_accuracy: null, department_accuracy: null, json_valid_rate: null, mean_latency_ms: null, mean_api_cost: null, api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null },
-            { provider: "external", cases: 14, evaluated_cases: 14, failed_cases: 0, category_accuracy: 0.8, urgency_accuracy: 0.8, department_accuracy: 0.8, json_valid_rate: 1, mean_latency_ms: 240, mean_api_cost: "0.0012", api_cost_currency: "USD", reviewed_notices: 0, human_correction_rate: null },
+            { provider: "local", cases: 22, evaluated_cases: 0, failed_cases: 22, category_accuracy: null, urgency_accuracy: null, department_accuracy: null, json_valid_rate: null, mean_latency_ms: null, mean_api_cost: null, api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null },
+            { provider: "external", cases: 22, evaluated_cases: 22, failed_cases: 0, category_accuracy: 0.8, urgency_accuracy: 0.8, department_accuracy: 0.8, json_valid_rate: 1, mean_latency_ms: 240, mean_api_cost: "0.0012", api_cost_currency: "USD", reviewed_notices: 0, human_correction_rate: null },
           ],
         }), { status: 200 });
       }
@@ -705,15 +705,15 @@ describe("IAviso Seguro", () => {
     expect(localCard).not.toBeNull();
     expect(within(localCard!).getAllByText("No disponible").length).toBeGreaterThan(0);
     expect(within(localCard!).queryByText("0%")).not.toBeInTheDocument();
-    expect(within(localCard!).getByText("0 de 14 · 14 sin resultado")).toBeInTheDocument();
+    expect(within(localCard!).getByText("0 de 22 · 22 sin resultado")).toBeInTheDocument();
   });
 
   it("mantiene el cero por ciento cuando las predicciones evaluables fallan", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       if (String(input) === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
       if (String(input) === "/api/v1/evaluations" && init?.method === "POST") {
-        const zero = { cases: 14, evaluated_cases: 14, failed_cases: 0, category_accuracy: 0, urgency_accuracy: 0, department_accuracy: 0, json_valid_rate: 1, mean_latency_ms: 120, mean_api_cost: "0", api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null };
-        return new Response(JSON.stringify({ dataset_version: "1.0.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.", summaries: [{ provider: "local", ...zero }, { provider: "external", ...zero }] }), { status: 200 });
+        const zero = { cases: 22, evaluated_cases: 22, failed_cases: 0, category_accuracy: 0, urgency_accuracy: 0, department_accuracy: 0, json_valid_rate: 1, mean_latency_ms: 120, mean_api_cost: "0", api_cost_currency: null, reviewed_notices: 0, human_correction_rate: null };
+        return new Response(JSON.stringify({ dataset_version: "1.1.0", generated_at: "2026-09-12T10:00:00Z", disclaimer: "Datos sintéticos.", summaries: [{ provider: "local", ...zero }, { provider: "external", ...zero }] }), { status: 200 });
       }
       return new Response(JSON.stringify([]), { status: 200 });
     });

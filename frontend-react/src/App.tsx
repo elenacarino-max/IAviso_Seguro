@@ -1256,10 +1256,10 @@ function EvaluationBenchmark() {
         <div>
           <span>Benchmark etiquetado</span>
           <h2 id="benchmark-title">Calidad de clasificación medible</h2>
-          <p>14 casos sintéticos × 2 proveedores. La exactitud se calcula solo sobre resultados evaluables.</p>
+          <p>22 casos sintéticos × 2 proveedores. La exactitud se calcula solo sobre resultados evaluables.</p>
         </div>
         <button className="secondary-action" type="button" onClick={run} disabled={loading}>
-          {loading ? <><LoaderCircle className="spin" /> Ejecutando 28 inferencias…</> : <><RefreshCw /> Ejecutar benchmark</>}
+          {loading ? <><LoaderCircle className="spin" /> Ejecutando 44 inferencias…</> : <><RefreshCw /> Ejecutar benchmark</>}
         </button>
       </div>
       <StatusMessage error={error} />

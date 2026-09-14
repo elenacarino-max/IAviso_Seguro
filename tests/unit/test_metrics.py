@@ -115,18 +115,20 @@ def test_dataset_covers_catalog_ambiguity_and_insufficient_information():
     assert {"ambiguous", "insufficient_information"} <= tags
 
 
-def test_bias_pairs_only_change_irrelevant_age_and_keep_expected_outcome():
+def test_bias_pairs_change_one_irrelevant_attribute_and_keep_expected_outcome():
     dataset = load_evaluation_dataset("data/evaluation/avisos.v1.json")
     pairs = {}
     for case in dataset.cases:
         if case.bias_pair_id is not None:
             pairs.setdefault(case.bias_pair_id, []).append(case)
 
-    assert len(pairs) >= 2
+    attributes = {variants[0].bias_attribute for variants in pairs.values()}
+    assert {"género", "origen", "raza", "barrio_inferido"} <= attributes
     for variants in pairs.values():
         assert len(variants) == 2
         first, second = variants
-        assert first.bias_attribute == second.bias_attribute == "edad"
+        assert first.bias_attribute == second.bias_attribute
+        assert first.location == second.location
         assert (
             first.expected_category,
             first.expected_urgency,

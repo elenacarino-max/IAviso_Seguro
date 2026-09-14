@@ -492,7 +492,7 @@ ejecución fallida cuentan como desacuerdo cuando existe referencia. Los campos
 sin observaciones permanecen en `null`; la validez JSON, los tokens y el coste
 se acompañan de su número de observaciones.
 
-El «benchmark» es una prueba comparativa controlada: ejecuta los mismos 14 casos
+El «benchmark» es una prueba comparativa controlada: ejecuta los mismos 22 casos
 sintéticos etiquetados con Ollama y Gemini y contrasta exactitud de categoría,
 urgencia y departamento, validez JSON, latencia y coste. Sirve para comparar
 estos proveedores dentro del proyecto; no demuestra cuál es el mejor modelo
@@ -524,7 +524,7 @@ latencia, coste y resultados solo se realizan entre ejecuciones válidas; un
 proveedor no disponible no se considera ganador por sus valores parciales o
 nulos. La vista comparativa también
 permite ejecutar bajo demanda el dataset
-sintético completo: cada proveedor procesa los mismos 14 casos y se muestran la
+sintético completo: cada proveedor procesa los mismos 22 casos y se muestran la
 exactitud de categoría, urgencia y departamento, la tasa de JSON válido, la
 latencia media y el coste medio. Cada propuesta muestra la justificación generada, una traza
 auditable de acción, regla y evidencia, además de las fuentes recuperadas y el
@@ -557,8 +557,11 @@ conexiones reales.
 ## Ética y límites
 
 - Los textos, matrices y datasets incluidos son sintéticos y didácticos.
-- La urgencia no cambia por atributos demográficos irrelevantes; el dataset
-  contiene pares que solo varían la edad y conservan la etiqueta esperada.
+- El dataset utiliza pares contrafactuales: mantiene constante el riesgo y
+  modifica una sola palabra asociada a edad, género, origen, raza o barrio
+  inferido. Categoría, urgencia y departamento esperados permanecen iguales.
+  Es una prueba básica de consistencia contrafactual, no una demostración de
+  ausencia total de sesgo.
 - Un resultado del modelo siempre es una propuesta pendiente de validación
   humana, no una decisión operativa ni una evaluación preventiva acreditada.
 - Ante un peligro inmediato debe aplicarse el protocolo de emergencia del

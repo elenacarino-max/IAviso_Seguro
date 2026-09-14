@@ -161,7 +161,10 @@ documental. Cada ejecución
 mantiene sus métricas y errores; el resultado conserva el orden Ollama/Gemini.
 
 El benchmark usa un dataset independiente de los ejemplos del prompt. Ejecuta
-catorce casos por proveedor y no crea avisos en la bandeja. La referencia humana
+veintidós casos por proveedor y no crea avisos en la bandeja. Incluye pares
+contrafactuales donde solo cambia edad, género, origen, raza o barrio inferido;
+la etiqueta esperada permanece constante. Es una comprobación básica de
+consistencia, no una prueba de ausencia total de sesgo. La referencia humana
 de una comparación se guarda una sola vez y permite calcular coincidencia real.
 Ni comparación ni benchmark invocan el proveedor de embeddings o escriben en
 `notice_embeddings`.
