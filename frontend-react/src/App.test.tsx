@@ -188,12 +188,15 @@ describe("IAviso Seguro", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       if (String(input) === "/health") {
         return new Response(JSON.stringify({
-          status: "ok",
+          status: "degraded",
           services: [
             { id: "api", label: "API FastAPI", status: "available", detail: null },
             { id: "ollama", label: "Ollama · llama3.2:3b", status: "available", detail: null },
             { id: "gemini", label: "Gemini", status: "not_configured", detail: "no configurado" },
             { id: "sqlite", label: "SQLite", status: "available", detail: null },
+            { id: "risk_matrix", label: "Matriz PRL", status: "available", detail: null },
+            { id: "rag", label: "RAG preventivo", status: "unavailable", detail: "no disponible" },
+            { id: "embeddings", label: "Embeddings", status: "disabled", detail: "desactivado" },
           ],
         }), { status: 200 });
       }
@@ -207,6 +210,11 @@ describe("IAviso Seguro", () => {
     expect(within(services).getByText("Ollama · llama3.2:3b")).toBeInTheDocument();
     expect(within(services).getByText(/no configurado/)).toBeInTheDocument();
     expect(within(services).getByText("SQLite")).toBeInTheDocument();
+    expect(within(services).getByText("Matriz PRL")).toBeInTheDocument();
+    expect(within(services).getByText(/RAG preventivo/)).toBeInTheDocument();
+    expect(within(services).getByText(/no disponible/)).toBeInTheDocument();
+    expect(within(services).getByText(/Embeddings/)).toBeInTheDocument();
+    expect(within(services).getByText(/desactivado/)).toBeInTheDocument();
   });
 
   it("mantiene visible que la revisión humana es obligatoria", async () => {

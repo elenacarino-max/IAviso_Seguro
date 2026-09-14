@@ -47,7 +47,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .service-row i { width: 7px; height: 7px; border-radius: 50%; background: #d2b14d; box-shadow: 0 0 0 3px rgba(210,177,77,.1); }
 .service-row.available i { background: #78d397; box-shadow: 0 0 0 3px rgba(120,211,151,.1); }
 .service-row.unavailable i { background: var(--orange); box-shadow: 0 0 0 3px rgba(242,111,70,.12); }
-.service-row.not_configured i { background: transparent; border: 1px solid #71877e; box-shadow: none; }
+.service-row.not_configured i, .service-row.disabled i { background: transparent; border: 1px solid #71877e; box-shadow: none; }
 .service-row small { color: #71877e; font-size: inherit; }
 
 main { min-width: 0; }

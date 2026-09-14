@@ -2,8 +2,9 @@
 
 Rutas HTTP:
 
-- `GET /health`: confirma que FastAPI está disponible y comunica por separado
-  la salud de Ollama, Gemini y SQLite; las sondas de modelos no generan texto.
+- `GET /health`: confirma que FastAPI atiende y comunica por separado Ollama,
+  Gemini, SQLite, matriz PRL, corpus RAG y embeddings. Las sondas no procesan
+  avisos ni generan texto o vectores; embeddings desactivados no son un fallo.
 - `POST /api/v1/triage`: valida la entrada y selecciona Ollama con
   `provider=local` o Gemini con `provider=external`; persiste la propuesta como
   `pending_review` y adjunta la matriz y documentos preventivos consultados.

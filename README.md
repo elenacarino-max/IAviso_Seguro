@@ -260,14 +260,18 @@ Variables del proveedor externo:
 Si falta la clave externa, la API responde `503` sin intentar una conexión. Un
 aviso nunca se redirige implícitamente a otro proveedor.
 
-`GET /health` mantiene `status: "ok"` para indicar que FastAPI atiende y
-añade una lista ordenada de servicios. Ollama se comprueba con `/api/tags` y
-solo figura disponible si está instalado el modelo configurado; Gemini consulta
-los metadatos del modelo únicamente cuando existe clave; SQLite ejecuta una
-consulta mínima. Estas sondas no generan contenido, se ejecutan Ollama/Gemini en
-paralelo y están limitadas por `HEALTH_CHECK_TIMEOUT_SECONDS` (2 segundos por
-defecto). Una dependencia ausente se comunica dentro del cuerpo sin convertir
-la disponibilidad básica de la API en un error HTTP.
+`GET /health` devuelve una lista ordenada para FastAPI, Ollama, Gemini, SQLite,
+matriz PRL, corpus RAG y embeddings. Ollama se consulta una sola vez mediante
+`/api/tags`, distinguiendo el modelo generativo del modelo de embeddings; Gemini
+solo consulta metadatos cuando existe clave. La matriz y el corpus se cargan con
+sus schemas estrictos y SQLite ejecuta una consulta mínima. Embeddings
+desactivados se muestran como `disabled`, sin degradar el sistema. El estado
+global es `ok` cuando SQLite, matriz, RAG y al menos un proveedor LLM están
+disponibles y ninguna capacidad configurada está caída; en caso contrario es
+`degraded`. Las sondas no procesan avisos ni
+generan texto o vectores y mantienen el límite de
+`HEALTH_CHECK_TIMEOUT_SECONDS` (2 segundos por defecto). El endpoint conserva
+HTTP 200 y comunica cada incidencia de forma segura en el cuerpo.
 
 ## Prompts, herramienta y seguridad
 

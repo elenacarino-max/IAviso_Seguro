@@ -5,8 +5,21 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-ServiceId = Literal["api", "ollama", "gemini", "sqlite"]
-ServiceStatus = Literal["available", "unavailable", "not_configured"]
+ServiceId = Literal[
+    "api",
+    "ollama",
+    "gemini",
+    "sqlite",
+    "risk_matrix",
+    "rag",
+    "embeddings",
+]
+ServiceStatus = Literal[
+    "available",
+    "unavailable",
+    "not_configured",
+    "disabled",
+]
 
 
 class ServiceHealth(BaseModel):
@@ -25,5 +38,5 @@ class HealthResponse(BaseModel):
 
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
-    status: Literal["ok"] = "ok"
+    status: Literal["ok", "degraded"] = "ok"
     services: tuple[ServiceHealth, ...]

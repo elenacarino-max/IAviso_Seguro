@@ -38,6 +38,22 @@ class StaticHealthService:
                     detail="no configurado",
                 ),
                 ServiceHealth(id="sqlite", label="SQLite", status="available"),
+                ServiceHealth(
+                    id="risk_matrix",
+                    label="Matriz PRL",
+                    status="available",
+                ),
+                ServiceHealth(
+                    id="rag",
+                    label="RAG preventivo",
+                    status="available",
+                ),
+                ServiceHealth(
+                    id="embeddings",
+                    label="Embeddings",
+                    status="disabled",
+                    detail="desactivado",
+                ),
             )
         )
 
@@ -202,6 +218,24 @@ def test_health_reports_service_available():
                 "label": "SQLite",
                 "status": "available",
                 "detail": None,
+            },
+            {
+                "id": "risk_matrix",
+                "label": "Matriz PRL",
+                "status": "available",
+                "detail": None,
+            },
+            {
+                "id": "rag",
+                "label": "RAG preventivo",
+                "status": "available",
+                "detail": None,
+            },
+            {
+                "id": "embeddings",
+                "label": "Embeddings",
+                "status": "disabled",
+                "detail": "desactivado",
             },
         ],
     }

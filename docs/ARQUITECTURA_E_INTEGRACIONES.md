@@ -231,8 +231,12 @@ En Docker, una construcción multietapa compila React y FastAPI sirve el
 resultado en el mismo origen. El volumen data/local conserva SQLite y Ollama se
 alcanza en el host mediante host.docker.internal.
 
-La salud comprueba FastAPI, modelo de Ollama, configuración de Gemini y una
-consulta mínima de SQLite. Las sondas de modelo no generan contenido.
+La salud comprueba FastAPI, SQLite, matriz PRL, corpus RAG, Gemini y el inventario
+local de Ollama. Una única lectura de ese inventario distingue el modelo LLM del
+modelo de embeddings. Embeddings desactivados son un estado válido; las sondas
+no procesan avisos, generan contenido ni crean vectores. El agregado queda
+degradado si falla SQLite, matriz o RAG, si ningún proveedor LLM está operativo
+o si una capacidad configurada aparece como no disponible.
 
 ## Límites antes de un uso real
 

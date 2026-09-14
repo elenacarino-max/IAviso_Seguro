@@ -78,6 +78,7 @@ class FailingRepository:
 class StaticHealthService:
     def check(self):
         return HealthResponse(
+            status="degraded",
             services=(
                 ServiceHealth(id="api", label="API FastAPI", status="available"),
                 ServiceHealth(
@@ -93,6 +94,22 @@ class StaticHealthService:
                     detail="no configurado",
                 ),
                 ServiceHealth(id="sqlite", label="SQLite", status="available"),
+                ServiceHealth(
+                    id="risk_matrix",
+                    label="Matriz PRL",
+                    status="available",
+                ),
+                ServiceHealth(
+                    id="rag",
+                    label="RAG preventivo",
+                    status="available",
+                ),
+                ServiceHealth(
+                    id="embeddings",
+                    label="Embeddings",
+                    status="disabled",
+                    detail="desactivado",
+                ),
             )
         )
 
@@ -306,7 +323,7 @@ def test_server_continues_serving_after_provider_failure():
 
     assert failed.status_code == 502
     assert healthy.status_code == 200
-    assert healthy.json()["status"] == "ok"
+    assert healthy.json()["status"] == "degraded"
     assert healthy.json()["services"][0]["label"] == "API FastAPI"
     assert healthy.headers["X-Request-ID"] != failed.headers["X-Request-ID"]
 

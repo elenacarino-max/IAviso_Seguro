@@ -88,6 +88,9 @@ const serviceFallbacks = [
   { id: "ollama", label: "Ollama" },
   { id: "gemini", label: "Gemini" },
   { id: "sqlite", label: "SQLite" },
+  { id: "risk_matrix", label: "Matriz PRL" },
+  { id: "rag", label: "RAG preventivo" },
+  { id: "embeddings", label: "Embeddings" },
 ] as const;
 // Debe reflejar backend.schemas.triage.NoticeText. Una sola constante evita
 // que los formularios de alta y comparación vuelvan a divergir.
