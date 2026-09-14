@@ -1,7 +1,7 @@
 """Contratos públicos de triaje."""
 
 from .catalogs import Category, CatalogsResponse, Department, Provider, Urgency
-from .errors import ErrorCode, ErrorDetail, ErrorResponse
+from .errors import ErrorCode, ErrorDetail, ErrorResponse, ValidationErrorDetail
 from .health import HealthResponse, ServiceHealth, ServiceId, ServiceStatus
 from .knowledge import (
     KnowledgeBase,
@@ -93,6 +93,7 @@ __all__ = [
     "ErrorDetail",
     "ErrorCode",
     "ErrorResponse",
+    "ValidationErrorDetail",
     "Department",
     "EvaluationCase",
     "EvaluationDataset",

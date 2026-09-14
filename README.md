@@ -280,7 +280,8 @@ Gemini, Ollama ni ninguna API externa para detectar estos datos.
 
 Solo los campos anonimizados llegan a proveedores, matriz, recuperación RAG,
 métricas y SQLite. Los valores detectados no se conservan, no se devuelven y no
-se incorporan a logs. La respuesta incluye únicamente un resumen seguro:
+se incorporan a logs. Los errores de validación tampoco reflejan el contenido
+original de los campos enviados. La respuesta incluye únicamente un resumen seguro:
 
 ```json
 {

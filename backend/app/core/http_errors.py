@@ -1,6 +1,9 @@
 """Traducción estable de errores de dominio a respuestas HTTP."""
 
+import re
+
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from backend.app.providers import ProviderConnectionError, ProviderRateLimitError
@@ -11,7 +14,12 @@ from backend.app.repositories import (
     PersistenceError,
     ReviewConflictError,
 )
-from backend.app.schemas import ErrorDetail, ErrorResponse
+from backend.app.schemas import (
+    ErrorCode,
+    ErrorDetail,
+    ErrorResponse,
+    ValidationErrorDetail,
+)
 from backend.app.services import InvalidKnowledgeBaseError, InvalidProviderOutputError
 from backend.app.tools import (
     InvalidRiskMatrixError,
@@ -20,29 +28,115 @@ from backend.app.tools import (
     ToolStepLimitError,
 )
 
+_SAFE_LOCATION_PARTS = frozenset(
+    {
+        "body",
+        "query",
+        "path",
+        "header",
+        "cookie",
+        "text",
+        "provider",
+        "location",
+        "decision",
+        "reviewer",
+        "comment",
+        "expected_version",
+        "category",
+        "urgency",
+        "department",
+        "comparison_id",
+        "notice_id",
+        "search",
+        "status",
+        "closed",
+        "review_priority",
+        "order",
+        "page",
+        "limit",
+        "window_days",
+    }
+)
+_SAFE_ERROR_TYPE = re.compile(r"^[a-z0-9_.]{1,100}$")
+
+
+def _safe_validation_location(value: object) -> tuple[str | int, ...]:
+    """Conserva rutas conocidas y oculta nombres de campos aportados por el cliente."""
+
+    if not isinstance(value, (list, tuple)):
+        return ("request",)
+    return tuple(
+        part
+        if (
+            isinstance(part, int)
+            and not isinstance(part, bool)
+            or isinstance(part, str)
+            and part in _SAFE_LOCATION_PARTS
+        )
+        else "<field>"
+        for part in value
+    )
+
+
+def _safe_validation_details(
+    exc: RequestValidationError,
+) -> tuple[ValidationErrorDetail, ...]:
+    """Proyecta los errores nativos sobre una lista blanca sin input, ctx ni msg."""
+
+    details: list[ValidationErrorDetail] = []
+    for error in exc.errors():
+        error_type = error.get("type")
+        details.append(
+            ValidationErrorDetail(
+                loc=_safe_validation_location(error.get("loc")),
+                type=(
+                    error_type
+                    if isinstance(error_type, str)
+                    and _SAFE_ERROR_TYPE.fullmatch(error_type)
+                    else "validation_error"
+                ),
+                message="El campo no cumple el contrato de entrada.",
+            )
+        )
+    return tuple(details)
+
 
 def _error_response(
     request: Request,
     *,
     status_code: int,
-    code: str,
+    code: ErrorCode,
     message: str,
+    details: tuple[ValidationErrorDetail, ...] | None = None,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     request_id = request.state.request_id
     payload = ErrorResponse(
-        error=ErrorDetail(code=code, message=message),
+        error=ErrorDetail(code=code, message=message, details=details),
         request_id=request_id,
     )
     return JSONResponse(
         status_code=status_code,
-        content=payload.model_dump(),
+        content=payload.model_dump(mode="json", exclude_none=True),
         headers=headers,
     )
 
 
 def register_exception_handlers(application: FastAPI) -> None:
     """Registra solo fallos previstos; los detalles internos no salen por HTTP."""
+
+    @application.exception_handler(RequestValidationError)
+    async def request_validation_error_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=422,
+            code="request_validation_error",
+            message="La petición contiene datos inválidos.",
+            details=_safe_validation_details(exc),
+        )
 
     @application.exception_handler(ComparisonNotFoundError)
     async def comparison_not_found_handler(

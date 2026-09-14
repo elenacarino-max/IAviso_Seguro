@@ -10,6 +10,7 @@ ErrorCode = Literal[
     "notice_not_found",
     "persistence_error",
     "review_conflict",
+    "request_validation_error",
     "invalid_provider_output",
     "provider_unavailable",
     "provider_rate_limited",
@@ -21,11 +22,22 @@ ErrorCode = Literal[
 ]
 
 
+class ValidationErrorDetail(BaseModel):
+    """Detalle mínimo de validación que nunca contiene el valor recibido."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    loc: tuple[str | int, ...]
+    type: str
+    message: str
+
+
 class ErrorDetail(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
     code: ErrorCode
     message: str
+    details: tuple[ValidationErrorDetail, ...] | None = None
 
 
 class ErrorResponse(BaseModel):

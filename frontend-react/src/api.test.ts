@@ -38,6 +38,34 @@ describe("cliente de FastAPI", () => {
     );
   });
 
+  it("interpreta el error 422 seguro sin depender del detalle nativo de FastAPI", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({
+        error: {
+          code: "request_validation_error",
+          message: "La petición contiene datos inválidos.",
+          details: [{
+            loc: ["body", "text"],
+            type: "string_too_long",
+            message: "El campo no cumple el contrato de entrada.",
+          }],
+        },
+        request_id: "request-422",
+      }), { status: 422, headers: { "X-Request-ID": "request-422" } }),
+    );
+
+    await expect(api.createTriage({
+      text: "Aviso inválido",
+      provider: "local",
+      location: null,
+    })).rejects.toEqual(expect.objectContaining({
+      status: 422,
+      code: "request_validation_error",
+      requestId: "request-422",
+      message: "La petición contiene datos inválidos.",
+    }));
+  });
+
   it("envía una revisión sin campos ajenos al esquema", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify({ notice_id: "n-1" }), { status: 200 }),

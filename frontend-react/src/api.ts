@@ -28,6 +28,7 @@ const ERROR_CODES: readonly ErrorCode[] = [
   "notice_not_found",
   "persistence_error",
   "review_conflict",
+  "request_validation_error",
   "invalid_provider_output",
   "provider_unavailable",
   "provider_rate_limited",

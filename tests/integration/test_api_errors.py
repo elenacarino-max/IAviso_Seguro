@@ -35,6 +35,16 @@ client = TestClient(app)
 VALID_PAYLOAD = {"text": "Hay un cable deteriorado.", "provider": "local"}
 
 
+def nested_keys(value):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            yield key
+            yield from nested_keys(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from nested_keys(nested)
+
+
 class FailingService:
     def __init__(self, error):
         self.error = error
@@ -125,6 +135,109 @@ def test_success_response_has_generated_request_id():
 
     assert response.status_code == 200
     UUID(response.headers["X-Request-ID"])
+
+
+@pytest.mark.parametrize(
+    ("payload", "sensitive_value", "failed_field"),
+    [
+        (
+            {"text": "Aviso sintético.", "provider": "persona@example.com"},
+            "persona@example.com",
+            "provider",
+        ),
+        (
+            {"text": "Aviso sintético.", "provider": "612 345 678"},
+            "612 345 678",
+            "provider",
+        ),
+        (
+            {"text": "Aviso sintético.", "provider": "12345678Z"},
+            "12345678Z",
+            "provider",
+        ),
+        (
+            {"text": "Aviso sintético.", "provider": "X1234567L"},
+            "X1234567L",
+            "provider",
+        ),
+        (
+            {
+                "text": "Aviso sintético.",
+                "provider": "ES91 2100 0418 4502 0005 1332",
+            },
+            "ES91 2100 0418 4502 0005 1332",
+            "provider",
+        ),
+        (
+            {
+                "text": "A" * 4001 + " persona@example.com",
+                "provider": "local",
+            },
+            "persona@example.com",
+            "text",
+        ),
+    ],
+)
+def test_validation_error_never_reflects_sensitive_input(
+    payload,
+    sensitive_value,
+    failed_field,
+    caplog,
+):
+    response = client.post("/api/v1/triage", json=payload)
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "request_validation_error"
+    assert body["request_id"] == response.headers["X-Request-ID"]
+    UUID(body["request_id"])
+    assert sensitive_value not in response.text
+    assert sensitive_value not in repr(body)
+    assert "input" not in set(nested_keys(body))
+    assert "ctx" not in set(nested_keys(body))
+    assert ["body", failed_field] in [
+        detail["loc"] for detail in body["error"]["details"]
+    ]
+    assert sensitive_value not in caplog.text
+
+
+def test_multiple_validation_errors_expose_only_whitelisted_metadata(caplog):
+    sensitive_values = (
+        "multiple@example.com",
+        "612 345 678",
+        "12345678Z",
+        "ES91 2100 0418 4502 0005 1332",
+    )
+    response = client.post(
+        "/api/v1/triage",
+        json={
+            "text": "B" * 4001 + " multiple@example.com",
+            "provider": "612 345 678",
+            "location": "ES91 2100 0418 4502 0005 1332" * 10,
+            "12345678Z": "campo adicional",
+        },
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["error"]["code"] == "request_validation_error"
+    assert body["request_id"] == response.headers["X-Request-ID"]
+    assert len(body["error"]["details"]) == 4
+    assert {tuple(detail["loc"]) for detail in body["error"]["details"]} == {
+        ("body", "text"),
+        ("body", "provider"),
+        ("body", "location"),
+        ("body", "<field>"),
+    }
+    assert all(
+        set(detail) == {"loc", "type", "message"}
+        for detail in body["error"]["details"]
+    )
+    assert "input" not in set(nested_keys(body))
+    assert "ctx" not in set(nested_keys(body))
+    assert all(value not in response.text for value in sensitive_values)
+    assert all(value not in repr(body) for value in sensitive_values)
+    assert all(value not in caplog.text for value in sensitive_values)
 
 
 def test_external_provider_without_api_key_fails_safely():
