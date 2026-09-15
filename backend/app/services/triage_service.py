@@ -71,7 +71,7 @@ class TriageService:
         self,
         provider: TriageProvider,
         *,
-        max_repair_attempts: int = 1,
+        max_repair_attempts: int = 2,
         risk_matrix_tool: RiskMatrixTool | None = None,
         knowledge_retriever: PreventionKnowledgeRetriever | None = None,
         clock: Callable[[], float] = perf_counter,

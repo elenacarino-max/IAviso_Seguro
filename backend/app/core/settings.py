@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_path: Path = Path("data/local/iaviso.db")
     knowledge_base_path: Path = Path("data/knowledge/prevention_docs.v1.json")
     rag_max_sources: int = Field(default=2, ge=1, le=5)
-    llm_repair_attempts: int = Field(default=1, ge=0, le=3)
+    llm_repair_attempts: int = Field(default=2, ge=0, le=3)
     llm_max_retries: int = Field(default=2, ge=0, le=5)
     llm_retry_base_seconds: float = Field(default=0.5, ge=0, le=60)
     llm_retry_max_seconds: float = Field(default=8, ge=0, le=300)

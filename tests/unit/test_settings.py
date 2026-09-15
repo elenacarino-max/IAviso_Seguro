@@ -8,6 +8,12 @@ from pydantic import ValidationError
 from backend.app.core.settings import Settings
 
 
+def test_repair_attempts_default_to_two():
+    settings = Settings(_env_file=None)
+
+    assert settings.llm_repair_attempts == 2
+
+
 def test_database_path_is_configurable(monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", "data/local/prueba.db")
 

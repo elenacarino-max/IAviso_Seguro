@@ -775,8 +775,18 @@ describe("IAviso Seguro", () => {
     expect(screen.getAllByText("Acuerdo con técnico")).toHaveLength(2);
     expect(screen.getAllByText("Salidas reparadas")).toHaveLength(2);
     expect(screen.getByText("Aprobadas sin cambios")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Incertidumbre técnica y corrección" })).toBeInTheDocument();
-    expect(screen.getByText("Incertidumbre Alta")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Incertidumbre técnica" })).toBeInTheDocument();
+    expect(screen.getByText(/Resume señales observables durante la generación y validación/)).toBeInTheDocument();
+    expect(screen.getByText(/No mide la gravedad del riesgo ni la confianza del modelo/)).toBeInTheDocument();
+    expect(screen.getByText("Nivel técnico · Baja")).toBeInTheDocument();
+    expect(screen.getByText("Nivel técnico · Media")).toBeInTheDocument();
+    expect(screen.getByText("Nivel técnico · Alta")).toBeInTheDocument();
+    expect(screen.getByText("Proceso sin señales técnicas relevantes.")).toBeInTheDocument();
+    expect(screen.getByText("Una señal técnica detectada.")).toBeInTheDocument();
+    expect(screen.getByText("Varias señales técnicas o múltiples reparaciones.")).toBeInTheDocument();
+    expect(screen.getByText("6 propuestas")).toBeInTheDocument();
+    expect(screen.getByText("4 propuestas")).toBeInTheDocument();
+    expect(screen.getByText("2 propuestas")).toBeInTheDocument();
     expect(screen.getAllByText("50%").length).toBeGreaterThanOrEqual(2);
     expect(await screen.findByRole("heading", { name: "Panorama preventivo" })).toBeInTheDocument();
     expect(screen.getByText("Zona con más avisos confirmados")).toBeInTheDocument();
@@ -853,7 +863,7 @@ describe("IAviso Seguro", () => {
     await userEvent.click(screen.getByRole("button", { name: "7 días" }));
 
     expect(requested).toContain("/api/v1/metrics/preventive?window_days=7");
-    expect(screen.getByText("Incertidumbre técnica y corrección")).toBeInTheDocument();
+    expect(screen.getByText("Incertidumbre técnica")).toBeInTheDocument();
   });
 
   it("mantiene el bloque IA cuando el panorama preventivo no está disponible", async () => {
@@ -874,7 +884,7 @@ describe("IAviso Seguro", () => {
     await userEvent.click(screen.getByRole("button", { name: /Panel/ }));
 
     expect(await screen.findByText("Panorama preventivo no disponible.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Incertidumbre técnica y corrección" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Incertidumbre técnica" })).toBeInTheDocument();
   });
 
   it("contrasta ambos modelos y registra la decisión humana", async () => {
@@ -918,9 +928,17 @@ describe("IAviso Seguro", () => {
   });
 
   it("permite consultar la matriz de riesgos activa", async () => {
+    const matrixWithUnorderedUrgencies = {
+      ...riskMatrix,
+      rules: ["baja", "alta", "critica", "media"].map((urgency, index) => ({
+        ...riskMatrix.rules[0],
+        rule_id: `RM-ORDER-${index}`,
+        recommended_urgency: urgency,
+      })),
+    };
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       if (String(input) === "/api/v1/risk-matrix") {
-        return new Response(JSON.stringify(riskMatrix), { status: 200 });
+        return new Response(JSON.stringify(matrixWithUnorderedUrgencies), { status: 200 });
       }
       if (String(input) === "/api/v1/knowledge-base") {
         return new Response(JSON.stringify(knowledgeBase), { status: 200 });
@@ -932,7 +950,8 @@ describe("IAviso Seguro", () => {
     await userEvent.click(screen.getByRole("button", { name: /Matriz/ }));
 
     expect(await screen.findByRole("heading", { name: "Matriz de riesgos visible y auditable." })).toBeInTheDocument();
-    expect(screen.getByText("RM-ELEC-001")).toBeInTheDocument();
+    expect(screen.getByText("Crítica · Alta · Media · Baja")).toBeInTheDocument();
+    expect(screen.getByText("RM-ORDER-0")).toBeInTheDocument();
     expect(screen.getByText(/ubicación es contexto libre opcional/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "RAG preventivo" })).toBeInTheDocument();
     expect(screen.getByText("data/knowledge/prevention_docs.v1.json")).toBeInTheDocument();
@@ -1066,6 +1085,64 @@ describe("IAviso Seguro", () => {
     expect(category.querySelectorAll("option")).toHaveLength(9);
     expect(urgency.querySelectorAll("option")).toHaveLength(4);
     expect(department.querySelectorAll("option")).toHaveLength(4);
+  });
+
+  it("distingue visualmente urgencia y prioridad en todas las tarjetas de la bandeja", async () => {
+    const visualCases = [
+      { level: "low", urgency: "baja", label: "Baja", location: "Almacén" },
+      { level: "medium", urgency: "alta", label: "Media", location: "Taller" },
+      { level: "high", urgency: "media", label: "Alta", location: "Patio" },
+      { level: "critical", urgency: "critica", label: "Crítica", location: "Carga" },
+    ];
+    const notices = visualCases.map(({ level, urgency, location }, index) => ({
+      id: `n-visual-${level}`,
+      text: `Aviso visual ${level} con información preventiva suficiente.`,
+      location,
+      created_at: "2026-09-15T11:15:00Z",
+      triage_runs: [{
+        id: `r-visual-${level}`,
+        provider: level === "high" ? "external" : "local",
+        status: "pending_review",
+        version: 0,
+        proposal: {
+          category: "riesgo_electrico",
+          urgency,
+          summary: `Resumen preventivo sintético número ${index} para comprobar esta tarjeta.`,
+          department: "mantenimiento",
+          justification: "Regla sintética.",
+        },
+        uncertainty: { level: "low", reasons: [] },
+        review_priority: { level, reasons: [] },
+        review_policy_version: "v1",
+      }],
+    }));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/v1/catalogs") return new Response(JSON.stringify(catalogs), { status: 200 });
+      if (url === "/api/v1/risk-matrix") return new Response(JSON.stringify(riskMatrix), { status: 200 });
+      if (url.startsWith("/api/v1/notices")) {
+        return new Response(JSON.stringify({ items: notices, page: 1, limit: 20, total: notices.length, pages: 1 }), { status: 200 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: /Bandeja/ }));
+
+    for (const { level, label } of visualCases) {
+      const card = await screen.findByRole("button", { name: new RegExp(`Aviso visual ${level}`) });
+      expect(card).toHaveClass(`queue-priority-${level}`);
+      expect(within(card).getByText(`Prioridad de revisión · ${label}`)).toHaveClass(`queue-review-priority-${level}`);
+    }
+
+    const highPriorityCard = screen.getByRole("button", { name: /Aviso visual high/ });
+    expect(within(highPriorityCard).getByLabelText("Urgencia Media")).toHaveTextContent("Urg. Media");
+    expect(highPriorityCard.querySelectorAll(".queue-signals .urgency")).toHaveLength(1);
+    expect(highPriorityCard.querySelector(".queue-signals .priority-badge")).toBeNull();
+    expect(within(highPriorityCard).getByText("Patio")).toBeInTheDocument();
+    expect(within(highPriorityCard).getByText("Pendiente")).toBeInTheDocument();
+    expect(within(highPriorityCard).getByText(/Destino: Mantenimiento/)).toBeInTheDocument();
+    expect(within(highPriorityCard).getByText("Gemini · externo")).toBeInTheDocument();
   });
 
   it("filtra y ordena la bandeja por prioridad de revisión", async () => {

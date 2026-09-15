@@ -121,7 +121,7 @@ def test_execute_counts_provider_and_repair_attempts(triage_request):
 def test_execute_marks_exhausted_contract_as_invalid(triage_request):
     provider = SequenceProvider(TOOL_CALL, "{", "[]")
 
-    execution = TriageService(provider).execute(
+    execution = TriageService(provider, max_repair_attempts=1).execute(
         triage_request,
         request_id="req-invalid-metrics",
     )

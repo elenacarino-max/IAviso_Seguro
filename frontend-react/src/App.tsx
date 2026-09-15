@@ -132,6 +132,12 @@ const uncertaintyReasonLabels = {
   provider_retry: "El proveedor necesitó un reintento técnico.",
 } satisfies Record<UncertaintyReason, string>;
 
+const uncertaintyLevelDescriptions = {
+  low: "Proceso sin señales técnicas relevantes.",
+  medium: "Una señal técnica detectada.",
+  high: "Varias señales técnicas o múltiples reparaciones.",
+} satisfies Record<UncertaintyLevel, string>;
+
 const priorityReasonLabels = {
   low_urgency: "El riesgo tiene urgencia baja.",
   medium_urgency: "El riesgo tiene urgencia media.",
@@ -597,11 +603,11 @@ function InboxView({ mode, riskMatrix, catalogs, catalogsError, onPendingChange 
             const category = final?.category ?? run.proposal.category;
             const urgency = final?.urgency ?? run.proposal.urgency;
             const destination = final?.department ?? run.proposal.department;
-            return <button key={run.id} className={`queue-item ${selected?.run.id === run.id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
-              <div className="queue-top"><div className="queue-signals"><span className={`urgency ${urgencyTone(urgency)}`}>{optionLabel(urgency)}</span><PriorityBadge priority={run.review_priority} /></div><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
+            return <button key={run.id} className={`queue-item ${run.review_priority ? `queue-priority-${run.review_priority.level}` : ""} ${selected?.run.id === run.id ? "selected" : ""}`} onClick={() => setSelected({ notice, run })}>
+              <div className="queue-top"><div className="queue-signals"><span className={`urgency ${urgencyTone(urgency)}`} aria-label={`Urgencia ${optionLabel(urgency)}`}>Urg. {optionLabel(urgency)}</span></div><small>{formatDate(run.created_at ?? notice.created_at)}</small></div>
               <strong>{optionLabel(category)}</strong>
               <p>{notice.text}</p>
-              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span><UserRoundCheck size={14} /> {run.status === "rejected" ? "Destino propuesto" : isHistory ? "Derivado a" : "Destino"}: {optionLabel(destination)}</span><span>{providerNames[run.provider]}</span></footer>
+              <footer><span><MapPin size={14} /> {notice.location || "Sin ubicación"}</span><span className={`status-chip ${run.status}`}>{statusLabels[run.status]}</span><span><UserRoundCheck size={14} /> {run.status === "rejected" ? "Destino propuesto" : isHistory ? "Derivado a" : "Destino"}: {optionLabel(destination)}</span>{run.review_priority && <span className={`queue-review-priority queue-review-priority-${run.review_priority.level}`}>Prioridad de revisión · {policyLevelLabels[run.review_priority.level]}</span>}<span>{providerNames[run.provider]}</span></footer>
             </button>;
           })}
           {!loading && pageData.total > 0 && <nav className="queue-pagination" aria-label="Paginación de avisos"><button type="button" disabled={pageData.page <= 1} onClick={() => updateQuery({ page: pageData.page - 1 })}>Anterior</button><span>Página {pageData.page} de {Math.max(pageData.pages, 1)}</span><button type="button" disabled={pageData.page >= pageData.pages} onClick={() => updateQuery({ page: pageData.page + 1 })}>Siguiente</button></nav>}
@@ -773,16 +779,17 @@ function Dashboard() {
               </article>;
             })}
           </div>
-          <section className="policy-dashboard work-card" aria-label="Indicadores de incertidumbre">
+          <section className="policy-dashboard work-card" aria-label="Indicadores de incertidumbre técnica">
             <header>
-              <div><span>Supervisión humana</span><h2>Incertidumbre técnica y corrección</h2></div>
+              <div><span>Supervisión humana</span><h2>Incertidumbre técnica</h2><p>Resume señales observables durante la generación y validación de la propuesta. No mide la gravedad del riesgo ni la confianza del modelo.</p></div>
               <strong>{summary.review_policy_observations ?? 0}<small>propuestas con política versionada</small></strong>
             </header>
             {summary.review_policy_observations > 0 ? (
               <div className="uncertainty-dashboard-grid">
                 {summary.uncertainty.map((item) => (
                   <article key={item.level}>
-                    <span>Incertidumbre {policyLevelLabels[item.level]}</span>
+                    <span>Nivel técnico · {policyLevelLabels[item.level]}</span>
+                    <p className="uncertainty-description">{uncertaintyLevelDescriptions[item.level]}</p>
                     <strong>{formatRate(item.rate)}</strong>
                     <small>{item.runs} propuestas</small>
                     <p>Corrección humana <b>{formatRate(item.human_correction_rate)}</b></p>
@@ -986,7 +993,8 @@ function MatrixView({
   knowledgeError: unknown;
 }) {
   const rules = Array.isArray(matrix?.rules) ? matrix.rules : [];
-  const urgencyCatalog = [...new Set(rules.map((rule) => rule.recommended_urgency))];
+  const urgencyCatalog = (["critica", "alta", "media", "baja"] satisfies readonly Urgency[])
+    .filter((urgency) => rules.some((rule) => rule.recommended_urgency === urgency));
   const departmentCatalog = [...new Set(rules.map((rule) => rule.department))];
 
   return (
