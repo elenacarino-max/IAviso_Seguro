@@ -28,6 +28,7 @@ data/local/*
 docs/*
 !docs/GUIA_FUNCIONAL.md
 !docs/ARQUITECTURA_E_INTEGRACIONES.md
+!docs/PUESTA_EN_MARCHA.md
 *.db
 *.db-*
 *.sqlite
