@@ -1,5 +1,5 @@
 """Controles de cierre sobre los archivos que Git publicaría."""
-'''
+
 import re
 import subprocess
 from pathlib import Path
@@ -12,6 +12,7 @@ _SECRET_PATTERNS = (
 _PUBLIC_DOCUMENTATION = {
     "docs/ARQUITECTURA_E_INTEGRACIONES.md",
     "docs/GUIA_FUNCIONAL.md",
+    "docs/PUESTA_EN_MARCHA.md",
 }
 
 
@@ -48,4 +49,3 @@ def test_tracked_text_has_no_recognizable_private_keys_or_google_api_keys():
         assert not any(pattern.search(content) for pattern in _SECRET_PATTERNS), (
             f"Posible secreto versionado en {relative_path}"
         )
-'''

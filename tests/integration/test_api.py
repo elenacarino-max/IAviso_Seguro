@@ -180,6 +180,13 @@ def use_mock_provider_for_contract_tests(tmp_path):
     app.dependency_overrides[get_triage_service] = lambda: TriageService(
         MockTriageProvider()
     )
+    app.dependency_overrides[get_similarity_service] = lambda: SimilarityService(
+        DeterministicEmbeddingProvider(),
+        enabled=False,
+        model="embed-test",
+        threshold=0.75,
+        top_k=3,
+    )
     app.dependency_overrides[get_notice_repository] = lambda: repository
     app.dependency_overrides[get_health_service] = lambda: StaticHealthService()
     try:
