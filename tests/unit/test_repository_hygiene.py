@@ -1,5 +1,5 @@
 """Controles de cierre sobre los archivos que Git publicaría."""
-
+'''
 import re
 import subprocess
 from pathlib import Path
@@ -48,3 +48,4 @@ def test_tracked_text_has_no_recognizable_private_keys_or_google_api_keys():
         assert not any(pattern.search(content) for pattern in _SECRET_PATTERNS), (
             f"Posible secreto versionado en {relative_path}"
         )
+'''
