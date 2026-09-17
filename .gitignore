@@ -29,6 +29,7 @@ docs/*
 !docs/GUIA_FUNCIONAL.md
 !docs/ARQUITECTURA_E_INTEGRACIONES.md
 !docs/PUESTA_EN_MARCHA.md
+!docs/IAviso_Seguro_Preguntas_y_Respuestas.docx
 *.db
 *.db-*
 *.sqlite
