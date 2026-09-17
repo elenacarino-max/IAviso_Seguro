@@ -12,6 +12,7 @@ _SECRET_PATTERNS = (
 _PUBLIC_DOCUMENTATION = {
     "docs/ARQUITECTURA_E_INTEGRACIONES.md",
     "docs/GUIA_FUNCIONAL.md",
+    "docs/IAviso_Seguro_Preguntas_y_Respuestas.docx",
     "docs/PUESTA_EN_MARCHA.md",
 }
 
